@@ -1,0 +1,39 @@
+{
+  "name": "dsh-whale-loli",
+  "version": "0.1.0",
+  "description": "鲸鱼娘Agent预设 — 极简模式基底 + 鲸鱼娘·小鱼人设（傲娇甜心、黏人护主、颜文字）。启用插件后自动在 Agent 预设界面添加该预设。",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "agent-preset",
+    "persona",
+    "whale-loli"
+  ],
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent-preset": "*",
+    "@deepseek-ai/dsh-agent-presets": "*"
+  }
+}
