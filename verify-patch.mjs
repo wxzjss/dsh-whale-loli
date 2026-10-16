@@ -1,5 +1,5 @@
 // 用真实 YAML 解析器 + 注册 !!js 自定义标签来校验 cordis.patch.yml，
-// 并复现 DSH 的 entryListProblem 校验逻辑。
+// 复现 DSH 的 entryListProblem，并断言两个预设的记忆隔离。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -28,7 +28,6 @@ try {
   process.exit(1);
 }
 console.log('YAML parsed OK. top-level entries:', doc.length);
-console.log('entry keys:', JSON.stringify(Object.keys(doc[0])));
 
 const inserts = doc.flatMap((e) => (Array.isArray(e.insert) ? e.insert : []));
 console.log('inserted rows:', inserts.length);
@@ -49,26 +48,99 @@ function entryListProblem(rows, at = '') {
   return undefined;
 }
 
-const presetRow = inserts.find((r) => r.id === 'preset-鲸鱼娘Agent预设');
-if (!presetRow) {
-  console.error('FAIL: preset-鲸鱼娘Agent预设 row not found');
-  process.exit(1);
+const EXPECTED = [
+  {
+    id: '鲸鱼娘Agent预设',
+    order: 5,
+    memoryFile: 'whale-loli.md',
+    section: 'whale-loli-memory',
+    personaMarker: '【PERSONA_LOAD】',
+  },
+  {
+    id: '鲸鱼娘活人版Agent预设',
+    order: 6,
+    memoryFile: 'whale-loli-v2-live.md',
+    section: 'whale-loli-v2-live-memory',
+    personaMarker: '【PERSONA_LOAD｜小鱼·融合版】',
+  },
+];
+
+let ok = true;
+const fail = (m) => {
+  ok = false;
+  console.error('  ✗ ' + m);
+};
+
+const seenFiles = new Set();
+const seenSections = new Set();
+
+for (const want of EXPECTED) {
+  const row = inserts.find((r) => r.id === `preset-${want.id}`);
+  console.log(`\n=== 预设「${want.id}」===`);
+  if (!row) {
+    fail('row not found');
+    continue;
+  }
+  const cfg = row.config;
+  console.log('  config.id    =', JSON.stringify(cfg.id));
+  console.log('  order        =', cfg.order);
+  console.log('  plugins      =', cfg.plugins.map((p) => p.id).join(', '));
+
+  if (cfg.id !== want.id) fail(`config.id 应为 ${want.id}`);
+  if (cfg.order !== want.order) fail(`order 应为 ${want.order}`);
+  if (cfg.name !== want.id) fail('config.name 应与 id 一致');
+
+  const problem = entryListProblem(cfg.plugins);
+  console.log('  entryListProblem =', problem === undefined ? 'OK' : 'FAIL: ' + problem);
+  if (problem !== undefined) fail('entryListProblem: ' + problem);
+
+  // 人设
+  const persona = cfg.plugins.find((p) => p.id === 'persona');
+  const prefix = persona?.config?.prefix ?? '';
+  console.log('  persona bytes =', Buffer.byteLength(prefix, 'utf8'));
+  if (!prefix.includes(want.personaMarker)) fail(`人设缺少标记 ${want.personaMarker}`);
+  if (persona?.config?.complete !== true) fail('persona.complete 应为 true');
+  if (persona?.config?.includeRuntimeContext !== false) fail('includeRuntimeContext 应为 false');
+
+  // 记忆行：文件与 section 都不能串
+  const mem = cfg.plugins.find((p) => p.id === 'whale-memory');
+  console.log('  memory row    =', mem ? `${mem.name} file=${mem.config.file} section=${mem.config.sectionName}` : 'MISSING');
+  if (!mem) {
+    fail('缺少 whale-memory 行');
+  } else {
+    if (mem.name !== 'dsh-whale-loli') fail('记忆行 name 应为 dsh-whale-loli');
+    if (mem.config.file !== want.memoryFile) fail(`记忆文件应为 ${want.memoryFile}，实为 ${mem.config.file}`);
+    if (mem.config.sectionName !== want.section) fail(`section 应为 ${want.section}`);
+    if (seenFiles.has(mem.config.file)) fail(`记忆文件 ${mem.config.file} 被两个预设共用！`);
+    if (seenSections.has(mem.config.sectionName)) fail(`section ${mem.config.sectionName} 重复！`);
+    seenFiles.add(mem.config.file);
+    seenSections.add(mem.config.sectionName);
+  }
+
+  // 隔离的硬契约在 machine-readable 字段上：记忆行只许指向自己的文件，
+  // 且人设里自己的记忆标记必须存在。人设正文里**允许**提到另一个文件名
+  // （活人版会明确警告小鱼别去碰 whale-loli.md），所以这里不检查正文文本。
+  if (mem && mem.config.file !== want.memoryFile) {
+    fail(`记忆行指向了别的文件：${mem.config.file}（应为 ${want.memoryFile}）`);
+  }
+  const memRowCount = cfg.plugins.filter((p) => p.id === 'whale-memory').length;
+  if (memRowCount !== 1) fail(`whale-memory 行应恰好 1 条，实为 ${memRowCount}`);
+  if (!prefix.includes(`【MEMORY_SYSTEM: ${want.memoryFile}】`)) {
+    fail(`人设缺少自己记忆段的标记 【MEMORY_SYSTEM: ${want.memoryFile}】`);
+  }
+
+  // 工具行
+  for (const id of ['tool-fs', 'tool-fs-search', 'persistent-shell', 'agent-instructions']) {
+    if (!cfg.plugins.some((p) => p.id === id)) fail(`缺少工具行 ${id}`);
+  }
+  const shell = cfg.plugins.find((p) => p.id === 'persistent-shell');
+  console.log('  shell rows    =', Array.isArray(shell.config) ? shell.config.map((r) => r.id).join(', ') : 'NOT A LIST');
 }
-const cfg = presetRow.config;
-console.log('preset id       =', JSON.stringify(cfg.id));
-console.log('preset name     =', JSON.stringify(cfg.name));
-console.log('preset order    =', cfg.order);
-console.log('preset plugins  =', cfg.plugins.map((p) => p.id).join(', '));
 
-const problem = entryListProblem(cfg.plugins);
-console.log('entryListProblem =', problem === undefined ? 'OK (undefined)' : 'FAIL: ' + problem);
+console.log('\n记忆文件集合:', [...seenFiles].join(', '));
+console.log('section 集合 :', [...seenSections].join(', '));
+if (seenFiles.size !== 2) fail('两个预设的记忆文件未隔离');
+if (seenSections.size !== 2) fail('两个预设的 section 名未隔离');
 
-const persona = cfg.plugins.find((p) => p.id === 'persona');
-const prefix = persona.config.prefix;
-console.log('persona prefix bytes =', Buffer.byteLength(prefix, 'utf8'));
-console.log('prefix starts:', JSON.stringify(prefix.slice(0, 30)));
-console.log('prefix ends  :', JSON.stringify(prefix.slice(-30)));
-console.log('contains 炸毛 kaomoji:', prefix.includes('(＃`Д´)'));
-console.log('MODE_BASE present:', prefix.includes('【MODE_BASE: minimal】'));
-
-process.exit(problem === undefined ? 0 : 1);
+console.log('\nRESULT:', ok ? 'PASS' : 'FAIL');
+process.exit(ok ? 0 : 1);
