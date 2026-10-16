@@ -51,6 +51,12 @@
 dsh plugin install dsh-whale-loli
 ```
 
+也可以直接装 npm 包（已发布：`dsh-whale-loli@0.1.1`）：
+
+```bash
+npm install dsh-whale-loli
+```
+
 启用后重启 / 重载宿主，在 **Agent 预设** 列表里就能看到「鲸鱼娘Agent预设」。
 
 ## 覆盖预设内容

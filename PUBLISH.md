@@ -16,6 +16,37 @@ npm whoami
 GitHub 侧不需要额外登录：本仓库已经推到 `https://github.com/wxzjss/dsh-whale-loli`，
 后续改动只需 `git push`。如果这台机器换了账号，再跑一次 `git config user.name/user.email`。
 
+## ⚠️ npm 现在只认「分阶段发布」（staged publishing）
+
+dsh-whale-loli 已于 2026-10-16 发布：**`dsh-whale-loli@0.1.1`**（`latest`）。
+但 npm 收紧了策略——直接 `npm publish` 用 bypass-2FA 的令牌会被挡下，
+报 `E_STAGE_REQUIRED` 或 `409 Cannot publish over previously staged version`。
+现在的正确姿势是 **stage → approve 两步**：
+
+```powershell
+# 1) 分阶段发布（需要一个 "Read and write (stage only)" 的 granular token）
+npx --yes npm@latest stage publish --//registry.npmjs.org/:_authToken=<TOKEN>
+
+# 2) 列出 / 查看
+npx --yes npm@latest stage list --//registry.npmjs.org/:_authToken=<TOKEN>
+npx --yes npm@latest stage view <stage-id> --//registry.npmjs.org/:_authToken=<TOKEN>
+
+# 3) 批准并真正上线（**需要账号 2FA**，纯令牌不行）
+npx --yes npm@latest stage approve <stage-id>
+```
+
+要点：
+
+- 需要 **npm CLI ≥ 11.15.0**（本机自带 10.9.7 不支持 `stage`，所以要 `npx npm@latest`）
+- stage 后状态会从 `validating` 变成 `staged`，**要等它变完再 approve**
+- `approve` 需要 2FA 证明，**纯 token 会被拒**（`E404 staged version not found`）——
+  最后一步必须由主人在浏览器/终端里过 2FA
+- `bypass-2FA` 令牌的直发能力 npm 计划在 **2027 年 1 月**彻底移除
+- 更推荐长线方案：**trusted publishing**（GitHub Actions 里免令牌发布）
+
+历史包袱：早期用 staging 令牌误试，在 npm 上留下了一个 `0.0.0-stage` 占位版本
+（已 deprecate，正常安装不受影响，`latest` 指向 `0.1.1`）。
+
 ## 用法
 
 ```powershell
