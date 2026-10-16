@@ -33,13 +33,16 @@ function read(...p) {
 /**
  * 同步清单：从 git 索引动态取（而不是手写死列表，免得新增文件漏传）。
  * 拿不到 git（比如没有 .git）时退回内置列表。
+ *
+ * 注意：只排除 `.git/` 目录本身，**不要**用 `.startsWith('.git')` —— 那会把
+ * `.gitignore` / `.gitattributes` 这类点文件一起滤掉，导致远端缺文件。
  */
 function collectFiles() {
   try {
     const tracked = execFileSync('git', ['ls-files'], { cwd: fileURLToPath(ROOT), encoding: 'utf8' })
       .split(/\r?\n/)
       .filter(Boolean)
-      .filter((p) => !p.startsWith('.git'))
+      .filter((p) => p !== '.git' && !p.startsWith('.git/'))
       .sort();
     if (tracked.length > 0) {
       return Object.fromEntries(tracked.map((p) => [p, read(...p.split('/'))]));
@@ -49,6 +52,7 @@ function collectFiles() {
   }
   return Object.fromEntries(
     [
+      '.gitattributes', '.gitignore',
       'PUBLISH.md', 'README.md', 'package.json', 'listing.json', 'catalog-entry.yml',
       'build-patch.mjs', 'prove-collision.mjs', 'publish.mjs', 'smoke-memory.mjs',
       'submit-listing.mjs', 'verify-composition.mjs', 'verify-listing.mjs',
