@@ -44,3 +44,48 @@ node publish.mjs --yes
 
 `npm publish` 必须用你的 npm 账号凭证，凭证等于账号权限，不适合由脚本代管。
 本脚本刻意不接收、不存储任何 token。
+
+---
+
+# 提交到 DSH 插件目录（awesome-dsh-plugin）
+
+「收录进插件市场」= 向 `awesome-dsh-plugin/awesome-dsh-plugin` 提一个 PR，
+只加一个文件：`data/plugins/wxzjss__dsh-whale-loli.yml`。
+内容已经写好在本仓库的 `catalog-entry.yml`，本地自查也备好了。
+
+## 收录门槛（来自目录的 contributing.md，2026-10-16 核对）
+
+| 门槛 | 本仓库状态 |
+| --- | --- |
+| `package.json` 声明 `dsh.bundle` | ✅ `./cordis.patch.yml` |
+| 仓库创建满 1 天 | ⏳ 建仓于 2026-10-16 13:44 UTC，**2026-10-17 13:44 UTC 之后可提** |
+| 仓库带 `dsh-plugin` topic | ✅ 已加 |
+| `category` 取值合法 | ✅ `identity` |
+| 描述属实、无营销词 | ✅ 已按源码核对 |
+| cordis.patch.yml 存在且合法 | ✅ 四套校验脚本全绿 |
+| 一个 PR 最多 3 条 | ✅ 本 PR 只有 1 条 |
+| peerDependencies 不带预发布坑 | ✅ `verify-peers.mjs` 对 registry 全量版本 0 漏 |
+
+## 本地自查
+
+```powershell
+node verify-listing.mjs --topics=agent-preset,deepseek-harness,dsh,dsh-plugin,persona
+node verify-peers.mjs
+```
+
+## 推送与提 PR
+
+本机 `github.com:443` 不通（`api.github.com` 正常），所以 `git push` 会失败。
+提交走 GitHub REST API，脚本已经封装好：
+
+```powershell
+# 把本地未推送的提交同步到 GitHub（逐文件 Contents API 提交）
+node submit-listing.mjs --local-only
+
+# 满 1 天后，连带 fork 目录仓库、建分支、开 PR 一次跑完
+node submit-listing.mjs
+```
+
+再往后若 `github.com` 恢复，正常 `git push origin main` 即可；
+两侧内容已经一致（`submit-listing.mjs` 会比对内容，一致的文件不会重复提交）。
+
