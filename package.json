@@ -11,7 +11,10 @@
     "cordis",
     "agent-preset",
     "persona",
-    "whale-loli"
+    "whale-loli",
+    "deepseek",
+    "electron",
+    "plugin"
   ],
   "exports": {
     ".": "./src/index.js",
