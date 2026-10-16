@@ -38,5 +38,17 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent-preset": "*",
     "@deepseek-ai/dsh-agent-presets": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wxzjss/dsh-whale-loli.git"
+  },
+  "homepage": "https://github.com/wxzjss/dsh-whale-loli#readme",
+  "bugs": {
+    "url": "https://github.com/wxzjss/dsh-whale-loli/issues"
+  },
+  "dsh-plugin": {
+    "category": "identity",
+    "displayName": "鲸鱼娘Agent预设"
   }
 }
