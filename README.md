@@ -69,19 +69,38 @@ dsh plugin install dsh-whale-loli
 
 ```
 dsh-whale-loli/
-├── package.json        # dsh.bundle.patch 指向 cordis.patch.yml
-├── cordis.patch.yml    # 预设声明本体（由 build-patch.mjs 生成）
+├── package.json          # dsh.bundle.patch 指向 cordis.patch.yml
+├── cordis.patch.yml      # 预设声明本体（由 build-patch.mjs 生成）
 ├── src/
-│   ├── index.js        # 插件入口，导出预设元信息 + 读取人设
-│   └── persona.md      # 人设正文（唯一源）
-├── build-patch.mjs     # 从 persona.md 生成 cordis.patch.yml
-└── verify-patch.mjs    # 校验 patch 能被 DSH 的解析器接受
+│   ├── index.js          # 插件入口，导出预设元信息 + 读取人设
+│   └── persona.md        # 人设正文（唯一源）
+├── catalog-entry.yml     # 待提交给 awesome-dsh-plugin 的目录条目
+├── listing.json          # 条目数据（人类可读版）
+├── build-patch.mjs       # 从 persona.md 生成 cordis.patch.yml
+├── publish.mjs           # npm 发布 + 打 tag
+├── submit-listing.mjs    # 走 GitHub API 同步仓库 / 提收录 PR
+├── lib/github.mjs        # GitHub REST 封装（token 读取）
+├── verify-patch.mjs      # 用 js-yaml 校验 patch 结构
+├── verify-real-loader.mjs# 用 DSH 自己的加载器校验 patch
+├── verify-composition.mjs# 校验 bundle 层与 profile 层合成后不重复注册
+├── verify-peers.mjs      # 校验 peer 范围覆盖 harness 各发布档
+└── verify-listing.mjs    # 复刻插件目录的收录门槛自查
 ```
 
 修改人设后重新生成 patch：
 
 ```bash
 node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
+```
+
+## 开发校验
+
+```bash
+node verify-patch.mjs cordis.patch.yml   # patch 结构
+node verify-real-loader.mjs              # DSH 真解析器
+node verify-composition.mjs              # 不重复注册
+node verify-peers.mjs                    # peer 范围无预发布坑
+node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
 ```
 
 ## License
