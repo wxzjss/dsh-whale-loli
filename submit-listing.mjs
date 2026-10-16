@@ -14,8 +14,15 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { glab, readToken, b64, unb64 } from './lib/github.mjs';
+
+/** 算出 git blob 的 sha（与 git hash-object 一致），用于跳过没变的文件。 */
+function gitBlobSha(content) {
+  const buf = Buffer.from(content, 'utf8');
+  return createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+}
 
 const ROOT = new URL('./', import.meta.url);
 const REPO = 'wxzjss/dsh-whale-loli';
@@ -23,6 +30,7 @@ const CATALOG = 'awesome-dsh-plugin/awesome-dsh-plugin';
 const BRANCH = 'main';
 const ENTRY_PATH = 'data/plugins/wxzjss__dsh-whale-loli.yml';
 const localOnly = process.argv.includes('--local-only');
+const perFile = process.argv.includes('--per-file');
 
 /** 需要同步到 GitHub 的文件 → 内容。 */
 function read(...p) {
@@ -106,6 +114,79 @@ async function syncLocalCommits() {
   }
 }
 
+/**
+ * 一次性把所有文件写进**同一个** commit（Git Trees API）。
+ *
+ * 为什么需要它：逐个文件 PUT 会产生 N 个提交，中途每个提交都是一个「部分修好」
+ * 的状态 —— 于是给 tag 挑 commit 时极易挑到只修了一半的那个（v0.2.0 就栽在这里：
+ * tag 指向的树里 release.yml 已是新版，verify-patch.mjs 还是硬编码旧版，CI 照挂）。
+ * 用这个函数同步，远端 HEAD 的任何一版都是自洽的。
+ *
+ * 返回新 commit 的完整 sha。
+ */
+async function syncAtomic() {
+  console.log('=== 用 Git Trees API 一次性同步（单提交，避免半吊子状态）===');
+
+  // 1. 当前 HEAD
+  const headRef = await glab(`/repos/${REPO}/git/ref/heads/${BRANCH}`);
+  const headSha = headRef.object.sha;
+  const head = await glab(`/repos/${REPO}/git/commits/${headSha}`);
+  console.log(`  当前 HEAD: ${headSha.slice(0, 7)}`);
+
+  // 2. 远端已有的 blob sha（用来跳过没变的文件）
+  const remoteTree = await glab(`/repos/${REPO}/git/trees/${head.tree.sha}?recursive=1`);
+  const remoteBlobs = new Map(remoteTree.tree.filter((n) => n.type === 'blob').map((n) => [n.path, n.sha]));
+
+  // 3. 只为变了的文件建 blob
+  const entries = [];
+  let changed = 0;
+  for (const [path, content] of Object.entries(FILES)) {
+    if (content === null) continue;
+    const localSha = gitBlobSha(content);
+    if (remoteBlobs.get(path) === localSha) {
+      console.log(`  = ${path}`);
+      continue;
+    }
+    const blob = await glab(`/repos/${REPO}/git/blobs`, {
+      method: 'POST',
+      body: { content: b64(content), encoding: 'base64' },
+    });
+    entries.push({ path, mode: '100644', type: 'blob', sha: blob.sha });
+    console.log(`  ↑ ${path}`);
+    changed++;
+  }
+
+  if (changed === 0) {
+    console.log('  没有变化，远端已是最新。');
+    return headSha;
+  }
+
+  // 4. 建新 tree（基于原 tree，整体替换这些路径）
+  const tree = await glab(`/repos/${REPO}/git/trees`, {
+    method: 'POST',
+    body: { base_tree: head.tree.sha, tree: entries },
+  });
+
+  // 5. 建 commit
+  const commit = await glab(`/repos/${REPO}/git/commits`, {
+    method: 'POST',
+    body: {
+      message: process.env.SYNC_MESSAGE || 'chore: sync plugin files (atomic)',
+      tree: tree.sha,
+      parents: [headSha],
+    },
+  });
+
+  // 6. 移动分支
+  await glab(`/repos/${REPO}/git/refs/heads/${BRANCH}`, {
+    method: 'PATCH',
+    body: { sha: commit.sha, force: false },
+  });
+
+  console.log(`  ✓ 新 commit: ${commit.sha.slice(0, 7)}`);
+  return commit.sha;
+}
+
 /** 目录 CI 的硬门槛：仓库创建满 1 天。不满就明确报错，而不是去开一个必被拒的 PR。 */
 async function assertRepoAge() {
   const repo = await glab(`/repos/${REPO}`);
@@ -182,7 +263,12 @@ async function submitPr() {
   return pr;
 }
 
-await syncLocalCommits();
+// 默认走原子同步（单提交）。--per-file 用旧的逐文件方式。
+if (!perFile) {
+  await syncAtomic();
+} else {
+  await syncLocalCommits();
+}
 if (localOnly) {
   console.log('\n--local-only：跳过 PR 步骤。');
 } else {
