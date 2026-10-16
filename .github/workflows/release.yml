@@ -47,7 +47,10 @@ jobs:
           node --version
           npm --version
 
-      # 发布前把仓库里已有的校验脚本全跑一遍，不绿就不发
+      # 发布前把仓库里已有的校验脚本全跑一遍，不绿就不发。
+      # 说明：verify-patch / real-loader / composition 需要宿主自带的库，
+      # CI 里没装 DSH，它们会打印 [skip] 并 exit 0（这是预期行为，不是失败）；
+      # 不依赖 DSH 的检查（记忆隔离、冒烟、workflow 结构）在 CI 里会真跑。
       - name: Verify bundle patch, presets and memory isolation
         run: |
           node build-patch.mjs
@@ -57,6 +60,22 @@ jobs:
           node verify-composition.mjs
           node verify-memory-isolation.mjs
           node smoke-memory.mjs
+          node verify-workflow.mjs
+
+      # 单独把「CI 里必须真跑、不许静默跳过」的那几个再确认一次：
+      # 它们靠退出码说话，这里额外断言没有出现 [skip]，防止哪天悄悄退化成空转。
+      - name: Assert DSH-independent checks actually ran
+        run: |
+          out="$(node verify-memory-isolation.mjs 2>&1)"
+          echo "$out"
+          echo "$out" | grep -q "RESULT: PASS"
+          if echo "$out" | grep -q "\[skip\]"; then
+            echo "::error::verify-memory-isolation 在 CI 里被跳过了，但它不该跳过"
+            exit 1
+          fi
+          smoke="$(node smoke-memory.mjs 2>&1)"
+          echo "$smoke"
+          echo "$smoke" | grep -q "SMOKE OK"
 
       # tag 版本号必须与 package.json 一致，避免发出错版本
       - name: Check tag matches package.json version

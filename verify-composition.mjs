@@ -1,10 +1,22 @@
 // 组合体检：bundle 层 + profile 层合成后，
 // 断言两个预设都在、记忆行不串、没有重复 row id。
+//
+// 这需要本机真的有 DSH 安装与 desktop profile；CI 里没有，故优雅跳过。
 import { pathToFileURL } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { requireDshRoot } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
-const PROFILE = 'C:/Users/35453/.dsh/profiles/desktop';
+const DSH_ROOT = requireDshRoot('dsh-app-boot');
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
+const PROFILE = process.env.DSH_PROFILE_DIR || join(DSH_HOME, 'profiles', 'desktop');
+
+if (!existsSync(join(PROFILE, 'package.json'))) {
+  console.log(`[skip] 没找到 profile：${PROFILE}（CI 里正常）。`);
+  process.exit(0);
+}
+
 const boot = await import(
   pathToFileURL(DSH_ROOT + '/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js').href
 );

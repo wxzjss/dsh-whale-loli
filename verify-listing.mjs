@@ -43,11 +43,14 @@ try {
   const out = execFileSync('gh', ['api', `repos/${REPO}`, '--jq', '.created_at'], { encoding: 'utf8', shell: true }).trim();
   created = new Date(out);
 } catch {
-  // 没有 gh CLI 就退回 token + REST
+  // 没有 gh CLI 就退回 token + fetch（token 走 lib/github 的统一来源，不硬编码路径）
   try {
-    const token = readFileSync('C:/Users/35453/Downloads/ghp.txt', 'utf8').trim();
-    const out = execFileSync('curl.exe', ['-s', '-H', `Authorization: token ${token}`, `https://api.github.com/repos/${REPO}`], { encoding: 'utf8' });
-    created = new Date(JSON.parse(out).created_at);
+    const { readToken } = await import('./lib/github.mjs');
+    const token = readToken();
+    const res = await fetch(`https://api.github.com/repos/${REPO}`, {
+      headers: token ? { authorization: `token ${token}`, 'user-agent': 'dsh' } : { 'user-agent': 'dsh' },
+    });
+    if (res.ok) created = new Date((await res.json()).created_at);
   } catch { /* 交给下面的分支 */ }
 }
 if (created && !Number.isNaN(created.getTime())) {

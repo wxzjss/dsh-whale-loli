@@ -8,16 +8,34 @@
  * 所以每个范围都要对「当前实际在册的版本」逐一 satisfies 一遍。
  */
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
-const require = createRequire(DSH_ROOT + '/node_modules/');
 let semver;
+// 优先用 DSH 自带的那份 semver（版本与宿主一致）；
+// 没有 DSH（例如 CI）就退回本机 node 自带的 / 随便一份可用的 semver。
 try {
-  semver = require('semver');
+  const { findDshRoot } = await import('./lib/dsh-root.mjs');
+  const DSH_ROOT = findDshRoot();
+  if (DSH_ROOT) {
+    const { createRequire } = await import('node:module');
+    const { pathToFileURL } = await import('node:url');
+    const require = createRequire(DSH_ROOT + '/node_modules/');
+    try {
+      semver = require('semver');
+    } catch {
+      semver = await import(pathToFileURL(DSH_ROOT + '/node_modules/semver/index.js').href);
+    }
+  }
 } catch {
-  semver = await import(pathToFileURL(DSH_ROOT + '/node_modules/semver/index.js').href);
+  // 落到下面的动态 import
+}
+if (!semver) {
+  try {
+    semver = await import('semver');
+  } catch {
+    console.log('[skip] 找不到 semver（无 DSH 安装且本机没装 semver），跳过 peer 范围校验。');
+    console.log('       要跑到它：npm i -D semver，或设 DSH_ROOT=<你的 DSH 安装根>');
+    process.exit(0);
+  }
 }
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
