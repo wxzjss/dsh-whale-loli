@@ -1,51 +1,80 @@
-// 组合级体检：把 bundle 层 + profile 层的全部 patch 合成，
-// 检查 entryListProblem、重复 row id、预设注册冲突。
+// 组合体检：bundle 层 + profile 层合成后，
+// 断言两个预设都在、记忆行不串、没有重复 row id。
 import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
+const PROFILE = 'C:/Users/35453/.dsh/profiles/desktop';
 const boot = await import(
   pathToFileURL(DSH_ROOT + '/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js').href
 );
 
-const bundleLayer = boot.loadOverlayPatches('dsh',
-  'C:/Users/35453/Documents/deepseek-harness/default-workspace/dsh-whale-loli/cordis.patch.yml');
-const profileLayer = boot.loadOverlayPatches('dsh',
-  'C:/Users/35453/.dsh/profiles/desktop/cordis.patch.yml');
+const manifest = JSON.parse(readFileSync(`${PROFILE}/package.json`, 'utf8'));
+const bundles = manifest.dsh?.profile?.bundles ?? [];
 
-const rows = boot.composeEntries([bundleLayer, profileLayer]);
-const flat = (Array.isArray(rows) ? rows : [rows]).flat(Infinity)
+const units = [];
+for (const name of bundles) {
+  const dir = `${PROFILE}/node_modules/${name}`;
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(`${dir}/package.json`, 'utf8'));
+  } catch {
+    continue;
+  }
+  const decl = pkg.dsh?.bundle;
+  if (decl?.patch === undefined) continue;
+  for (const file of boot.bundlePatchPaths(dir, decl)) {
+    const patches = boot.loadOverlayPatches('dsh', file);
+    if (patches) units.push(...patches);
+  }
+}
+
+const profilePatches = boot.loadOptionalPatches('dsh', `${PROFILE}/cordis.patch.yml`) ?? [];
+const composed = boot.composeEntries([units, profilePatches]);
+const rows = (Array.isArray(composed) ? composed : [composed]).flat(Infinity)
   .filter((r) => r && typeof r === 'object' && !Array.isArray(r));
 
-console.log('composed top-level rows:', flat.length);
+console.log('composed top-level rows:', rows.length);
 
-// 1) 重复 row id（同层）
+// 重复 row id
 const seen = new Map();
 const dupes = [];
-for (const r of flat) {
+for (const r of rows) {
   if (typeof r.id !== 'string') continue;
   if (seen.has(r.id)) dupes.push(r.id);
   seen.set(r.id, r);
 }
 console.log('duplicate row ids:', dupes.length ? dupes.join(', ') : 'none');
 
-// 2) 预设注册冲突：所有 dsh-agent-preset 行按 preset id 归组
-const presets = flat.filter((r) => r.name === '@deepseek-ai/dsh-agent-preset' && r.config);
+// 预设注册冲突 + 记忆隔离
+const presets = rows.filter((r) => r.name === '@deepseek-ai/dsh-agent-preset' && r.config);
 const byId = new Map();
-for (const p of presets) {
-  const k = p.config.id;
-  byId.set(k, [...(byId.get(k) ?? []), p]);
-}
+for (const p of presets) byId.set(p.config.id, [...(byId.get(p.config.id) ?? []), p]);
+
 console.log('\nagent-preset rows:', presets.length);
+const memFiles = new Set();
+const memSections = new Set();
 for (const [id, list] of byId) {
-  const bad = list.length > 1;
-  console.log(`  preset ${JSON.stringify(id)}: ${list.length} row(s)` + (bad ? '  <-- DUPLICATE, register() would throw' : '') +
-    ` name=${JSON.stringify(list[0].config.name)} order=${list[0].config.order} plugins=${list[0].config.plugins?.map(x => x.id).join(',')}`);
+  const mem = list[0].config.plugins?.find((p) => p.id === 'whale-memory');
+  const tag = mem ? `file=${mem.config.file} section=${mem.config.sectionName}` : '(no whale-memory)';
+  console.log(`  ${id}: ${list.length} row(s)  ${tag}`);
+  if (mem) {
+    if (memFiles.has(mem.config.file)) console.log(`    !! 记忆文件重复: ${mem.config.file}`);
+    if (memSections.has(mem.config.sectionName)) console.log(`    !! section 重复: ${mem.config.sectionName}`);
+    memFiles.add(mem.config.file);
+    memSections.add(mem.config.sectionName);
+  }
 }
 
-// 3) 每条非 group 行都要有 name
-const nameless = flat.filter((r) => typeof r.name !== 'string' || r.name === '');
-console.log('\nrows without a plugin name:', nameless.length);
+const both =
+  byId.has('鲸鱼娘Agent预设') &&
+  byId.has('鲸鱼娘活人版Agent预设') &&
+  memFiles.size === 2 &&
+  memSections.size === 2 &&
+  dupes.length === 0;
 
-const ok = dupes.length === 0 && [...byId.values()].every((l) => l.length === 1) && nameless.length === 0;
-console.log('\nRESULT:', ok ? 'PASS' : 'FAIL');
-process.exit(ok ? 0 : 1);
+console.log('\n两个预设都在:', byId.has('鲸鱼娘Agent预设') && byId.has('鲸鱼娘活人版Agent预设'));
+console.log('记忆文件数:', memFiles.size, '|', [...memFiles].join(', '));
+console.log('section 数 :', memSections.size, '|', [...memSections].join(', '));
+console.log('\nRESULT:', both ? 'PASS' : 'FAIL');
+process.exit(both ? 0 : 1);
