@@ -1,17 +1,32 @@
-// 证明：bundle 层 insert 的 preset-whale-loli 与 profile 层 insert 的
-// 同名行会同时存在于组合里 —— 两个 dsh-agent-preset 都挂载、注册同一个
-// preset id，第二次 register() 抛 `Duplicate agent preset: whale-loli`。
+// 证明：bundle 层 insert 的 preset 行与 profile 层 insert 的同名行会同时
+// 存在于组合里 —— 两个 dsh-agent-preset 都挂载、注册同一个 preset id，
+// 第二次 register() 抛 `Duplicate agent preset: ...`。
+//
+// 需要本机真有 DSH 与 desktop profile；没有就优雅跳过。
 import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { requireDshRoot } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
+const DSH_ROOT = requireDshRoot('dsh-app-boot');
 const boot = await import(
   pathToFileURL(DSH_ROOT + '/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js').href
 );
 
-const bundleLayer = boot.loadOverlayPatches('dsh',
-  'C:/Users/35453/Documents/deepseek-harness/default-workspace/dsh-whale-loli/cordis.patch.yml');
-const profileLayer = boot.loadOverlayPatches('dsh',
-  'C:/Users/35453/.dsh/profiles/desktop/cordis.patch.yml');
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
+const profilePatch = join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
+if (!existsSync(profilePatch)) {
+  console.log(`[skip] 没找到 profile patch：${profilePatch}（CI 里正常）。`);
+  process.exit(0);
+}
+
+const bundleLayer = boot.loadOverlayPatches(
+  'dsh',
+  fileURLToPath(new URL('./cordis.patch.yml', import.meta.url)).replace(/\\/g, '/'),
+);
+const profileLayer = boot.loadOverlayPatches('dsh', profilePatch.replace(/\\/g, '/'));
 
 const rows = boot.composeEntries([bundleLayer, profileLayer]);
 const flat = Array.isArray(rows) ? rows.flat(Infinity) : [rows];
