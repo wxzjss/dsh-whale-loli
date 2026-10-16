@@ -13,7 +13,7 @@
  * 所以改用 GitHub REST 的 Contents/Git Data API 写内容。
  */
 import { readFileSync, existsSync } from 'node:fs';
-import { gh } from './lib/github.mjs';
+import { glab, readToken, b64, unb64 } from './lib/github.mjs';
 
 const ROOT = new URL('./', import.meta.url);
 const REPO = 'wxzjss/dsh-whale-loli';
@@ -56,16 +56,16 @@ const FILES = Object.fromEntries(
 async function pushFile(path, content, message) {
   let sha;
   try {
-    const cur = await gh(`/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
+    const cur = await glab(`/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
     sha = cur.sha;
   } catch (e) {
     if (e.status !== 404) throw e;
   }
-  const out = await gh(`/repos/${REPO}/contents/${path}`, {
+  const out = await glab(`/repos/${REPO}/contents/${path}`, {
     method: 'PUT',
     body: {
       message,
-      content: Buffer.from(content, 'utf8').toString('base64'),
+      content: b64(content),
       branch: BRANCH,
       ...(sha ? { sha } : {}),
     },
@@ -80,8 +80,8 @@ async function syncLocalCommits() {
     // 内容一致就跳过，避免打无意义的提交
     let remote = null;
     try {
-      const cur = await gh(`/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
-      remote = Buffer.from(cur.content, 'base64').toString('utf8');
+      const cur = await glab(`/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
+      remote = unb64(cur.content);
     } catch (e) { if (e.status !== 404) throw e; }
     if (remote === content) {
       console.log(`  = ${path} (已是最新)`);
@@ -92,38 +92,54 @@ async function syncLocalCommits() {
   }
 }
 
+/** 目录 CI 的硬门槛：仓库创建满 1 天。不满就明确报错，而不是去开一个必被拒的 PR。 */
+async function assertRepoAge() {
+  const repo = await glab(`/repos/${REPO}`);
+  const ageMs = Date.now() - new Date(repo.created_at).getTime();
+  const ONE_DAY = 86400_000;
+  if (ageMs < ONE_DAY) {
+    const left = ONE_DAY - ageMs;
+    const h = Math.floor(left / 3600_000);
+    const m = Math.round((left % 3600_000) / 60_000);
+    throw new Error(
+      `仓库创建于 ${repo.created_at}，还差 ${h} 小时 ${m} 分才满目录要求的 1 天。\n` +
+      `  到点后再跑一次本脚本即可（内容已就绪，不会丢）。`,
+    );
+  }
+  console.log(`  ✓ 仓库年龄达标（${(ageMs / ONE_DAY).toFixed(2)} 天）`);
+}
+
 async function submitPr() {
   console.log('\n=== 向目录仓库提 listing PR ===');
+  await assertRepoAge();
+
   // 1. fork（已 fork 则复用）
-  let fork;
-  try {
-    fork = await gh(`/repos/${REPO}/forks/${CATALOG}`, { method: 'POST' });
-  } catch {
-    fork = null;
-  }
   const owner = 'wxzjss';
   const forkFull = `${owner}/awesome-dsh-plugin`;
+  try {
+    await glab(`/repos/${REPO}/forks/${CATALOG}`, { method: 'POST' });
+  } catch { /* 多半是已经 fork 过了 */ }
   // 等 fork 就绪
   for (let i = 0; i < 20; i++) {
-    try { await gh(`/repos/${forkFull}`); break; } catch { await new Promise((r) => setTimeout(r, 3000)); }
+    try { await glab(`/repos/${forkFull}`); break; } catch { await new Promise((r) => setTimeout(r, 3000)); }
   }
   console.log(`  fork: ${forkFull}`);
 
   // 2. 从 fork 的 main 建分支
-  const base = await gh(`/repos/${forkFull}/git/ref/heads/main`);
+  const base = await glab(`/repos/${forkFull}/git/ref/heads/main`);
   const baseSha = base.object.sha;
   const branch = 'add-dsh-whale-loli';
-  try { await gh(`/repos/${forkFull}/git/refs`, { method: 'POST', body: { ref: `refs/heads/${branch}`, sha: baseSha } }); } catch { /* 已存在 */ }
+  try { await glab(`/repos/${forkFull}/git/refs`, { method: 'POST', body: { ref: `refs/heads/${branch}`, sha: baseSha } }); } catch { /* 已存在 */ }
 
   // 3. 写条目文件
   const entry = readFileSync(new URL('./catalog-entry.yml', ROOT), 'utf8');
   let curSha;
-  try { curSha = (await gh(`/repos/${forkFull}/contents/${ENTRY_PATH}?ref=${branch}`)).sha; } catch { /* 新文件 */ }
-  await gh(`/repos/${forkFull}/contents/${ENTRY_PATH}`, {
+  try { curSha = (await glab(`/repos/${forkFull}/contents/${ENTRY_PATH}?ref=${branch}`)).sha; } catch { /* 新文件 */ }
+  await glab(`/repos/${forkFull}/contents/${ENTRY_PATH}`, {
     method: 'PUT',
     body: {
       message: `Add ${owner}/dsh-whale-loli`,
-      content: Buffer.from(entry, 'utf8').toString('base64'),
+      content: b64(entry),
       branch,
       ...(curSha ? { sha: curSha } : {}),
     },
@@ -131,7 +147,7 @@ async function submitPr() {
   console.log(`  ✓ 写入 ${ENTRY_PATH}`);
 
   // 4. 开 PR
-  const pr = await gh(`/repos/${CATALOG}/pulls`, {
+  const pr = await glab(`/repos/${CATALOG}/pulls`, {
     method: 'POST',
     body: {
       title: `Add ${owner}/dsh-whale-loli`,
@@ -156,5 +172,10 @@ await syncLocalCommits();
 if (localOnly) {
   console.log('\n--local-only：跳过 PR 步骤。');
 } else {
-  await submitPr();
+  await assertRepoAge().catch((e) => {
+    console.error(`\n✗ 还不能提 PR：${e.message}`);
+    process.exitCode = 2;
+    return null;
+  });
+  if (process.exitCode !== 2) await submitPr();
 }
