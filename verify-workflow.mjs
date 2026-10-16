@@ -1,10 +1,30 @@
 // 校验 .github/workflows/release.yml 的关键点，避免推到 GitHub 上才发现写错。
+// 只需要一个 YAML 解析器：优先用 DSH 自带的（与宿主一致），找不到就退回
+// 随包可用的 js-yaml —— 这样 CI 里也能真跑，不会白跳。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { findDshRoot } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
-const yamlMod = await import(pathToFileURL(DSH_ROOT + '/node_modules/js-yaml/index.js').href);
-const yaml = yamlMod.default ?? yamlMod;
+async function loadYaml() {
+  const root = findDshRoot();
+  if (root) {
+    const m = await import(pathToFileURL(root + '/node_modules/js-yaml/index.js').href);
+    return m.default ?? m;
+  }
+  try {
+    const m = await import('js-yaml');
+    return m.default ?? m;
+  } catch {
+    return null;
+  }
+}
+
+const yaml = await loadYaml();
+if (!yaml) {
+  console.log('[skip] 找不到 js-yaml（既无 DSH 也未安装 js-yaml），跳过 workflow 校验。');
+  console.log('       要跑到它：npm i -D js-yaml，或设 DSH_ROOT=<你的 DSH 安装根>');
+  process.exit(0);
+}
 
 const wf = yaml.load(readFileSync('.github/workflows/release.yml', 'utf8'));
 
