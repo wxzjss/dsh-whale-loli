@@ -1,9 +1,13 @@
 // 用真实 YAML 解析器 + 注册 !!js 自定义标签来校验 cordis.patch.yml，
 // 复现 DSH 的 entryListProblem，并断言两个预设的记忆隔离。
+//
+// 借 DSH 自带的 js-yaml（解析行为与宿主完全一致）。
+// 本机没装 DSH（例如 CI）时优雅跳过 —— 不硬编码任何机器路径。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { requireDshRoot } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
+const DSH_ROOT = requireDshRoot('js-yaml');
 const yamlMod = await import(pathToFileURL(DSH_ROOT + '/node_modules/js-yaml/index.js').href);
 const yaml = yamlMod.default ?? yamlMod;
 
