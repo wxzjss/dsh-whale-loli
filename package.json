@@ -23,6 +23,8 @@
   "files": [
     "src",
     "cordis.patch.yml",
+    "listing.json",
+    "catalog-entry.yml",
     "README.md",
     "LICENSE"
   ],
@@ -35,9 +37,14 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent-preset": "*",
-    "@deepseek-ai/dsh-agent-presets": "*"
+    "@deepseek-ai/cordis": ">=4.0.1-rc.0 <4.1.0 || >=4.0.5-0 <5.0.0-0",
+    "@deepseek-ai/dsh-agent-preset": ">=0.1.7-0 <0.2.0 || >=0.2.0-rc.1 <0.2.1-0 || >=0.2.1-alpha.0 <0.3.0-0",
+    "@deepseek-ai/dsh-agent-preset-registry": ">=0.1.7-0 <0.2.0 || >=0.2.0-rc.1 <0.2.1-0 || >=0.2.1-alpha.0 <0.3.0-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-agent-preset": { "optional": true },
+    "@deepseek-ai/dsh-agent-preset-registry": { "optional": true }
   },
   "repository": {
     "type": "git",
