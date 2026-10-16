@@ -1,10 +1,20 @@
 // Verify how the RUNNING host resolves the whale-loli preset at boot:
 // does the bundle layer + profile layer produce exactly one preset row?
+// 需要本机真有 DSH 与 desktop profile；没有就优雅跳过。
 import { pathToFileURL } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { requireDshRoot } from './lib/dsh-root.mjs';
 
-const DSH = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
-const PROFILE = 'C:/Users/35453/.dsh/profiles/desktop';
+const DSH = requireDshRoot('dsh-app-boot');
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
+const PROFILE = process.env.DSH_PROFILE_DIR || join(DSH_HOME, 'profiles', 'desktop');
+
+if (!existsSync(join(PROFILE, 'package.json'))) {
+  console.log(`[skip] 没找到 profile：${PROFILE}（CI 里正常）。`);
+  process.exit(0);
+}
 
 const boot = await import(
   pathToFileURL(`${DSH}/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js`).href
