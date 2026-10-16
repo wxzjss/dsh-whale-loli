@@ -12,7 +12,9 @@
  * 为什么不用 `git push`：本机 github.com:443 连不上（api.github.com 正常），
  * 所以改用 GitHub REST 的 Contents/Git Data API 写内容。
  */
+import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { glab, readToken, b64, unb64 } from './lib/github.mjs';
 
 const ROOT = new URL('./', import.meta.url);
@@ -28,29 +30,37 @@ function read(...p) {
   return existsSync(url) ? readFileSync(url, 'utf8') : null;
 }
 
-const FILES = Object.fromEntries(
-  [
-    'PUBLISH.md',
-    'README.md',
-    'package.json',
-    'listing.json',
-    'catalog-entry.yml',
-    'build-patch.mjs',
-    'prove-collision.mjs',
-    'publish.mjs',
-    'submit-listing.mjs',
-    'verify-composition.mjs',
-    'verify-listing.mjs',
-    'verify-live-runtime.mjs',
-    'verify-patch.mjs',
-    'verify-peers.mjs',
-    'verify-real-loader.mjs',
-    'src/index.js',
-    'src/persona.md',
-    'cordis.patch.yml',
-    'lib/github.mjs',
-  ].map((p) => [p, read(...p.split('/'))]),
-);
+/**
+ * 同步清单：从 git 索引动态取（而不是手写死列表，免得新增文件漏传）。
+ * 拿不到 git（比如没有 .git）时退回内置列表。
+ */
+function collectFiles() {
+  try {
+    const tracked = execFileSync('git', ['ls-files'], { cwd: fileURLToPath(ROOT), encoding: 'utf8' })
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .filter((p) => !p.startsWith('.git'))
+      .sort();
+    if (tracked.length > 0) {
+      return Object.fromEntries(tracked.map((p) => [p, read(...p.split('/'))]));
+    }
+  } catch {
+    // 落到下面的静态列表
+  }
+  return Object.fromEntries(
+    [
+      'PUBLISH.md', 'README.md', 'package.json', 'listing.json', 'catalog-entry.yml',
+      'build-patch.mjs', 'prove-collision.mjs', 'publish.mjs', 'smoke-memory.mjs',
+      'submit-listing.mjs', 'verify-composition.mjs', 'verify-listing.mjs',
+      'verify-live-runtime.mjs', 'verify-memory-isolation.mjs', 'verify-patch.mjs',
+      'verify-peers.mjs', 'verify-real-loader.mjs',
+      'src/index.js', 'src/memory.js', 'src/persona.md', 'src/persona-v2-live.md',
+      'cordis.patch.yml', 'lib/github.mjs',
+    ].map((p) => [p, read(...p.split('/'))]),
+  );
+}
+
+const FILES = collectFiles();
 
 /** 把内容写到远端分支（存在则更新，不存在则新建），逐个文件一次提交。 */
 async function pushFile(path, content, message) {
