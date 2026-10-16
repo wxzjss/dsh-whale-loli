@@ -1,9 +1,11 @@
 // 用 DSH 自己的 loadOverlayPatches + composeEntries 校验插件 patch，
 // 这是宿主真正的接受路径（而不是自己复刻一份校验逻辑）。
 // 两个预设都要过，并确认记忆行没有串。
+// 本机没装 DSH（例如 CI）时优雅跳过。
 import { pathToFileURL } from 'node:url';
+import { requireDshRoot } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = 'C:/Users/35453/AppData/Local/Programs/DeepSeek Harness/resources/app/dsh';
+const DSH_ROOT = requireDshRoot('dsh-app-boot');
 const boot = await import(
   pathToFileURL(DSH_ROOT + '/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js').href
 );
