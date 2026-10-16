@@ -23,15 +23,34 @@ const ENTRY_PATH = 'data/plugins/wxzjss__dsh-whale-loli.yml';
 const localOnly = process.argv.includes('--local-only');
 
 /** 需要同步到 GitHub 的文件 → 内容。 */
-const FILES = {
-  'package.json': readFileSync(new URL('./package.json', ROOT), 'utf8'),
-  'listing.json': existsSync(new URL('./listing.json', ROOT)) ? readFileSync(new URL('./listing.json', ROOT), 'utf8') : null,
-  'catalog-entry.yml': readFileSync(new URL('./catalog-entry.yml', ROOT), 'utf8'),
-  'verify-peers.mjs': readFileSync(new URL('./verify-peers.mjs', ROOT), 'utf8'),
-  'verify-listing.mjs': readFileSync(new URL('./verify-listing.mjs', ROOT), 'utf8'),
-  'lib/github.mjs': readFileSync(new URL('./lib/github.mjs', ROOT), 'utf8'),
-  'submit-listing.mjs': readFileSync(new URL('./submit-listing.mjs', ROOT), 'utf8'),
-};
+function read(...p) {
+  const url = new URL('./' + p.join('/'), ROOT);
+  return existsSync(url) ? readFileSync(url, 'utf8') : null;
+}
+
+const FILES = Object.fromEntries(
+  [
+    'PUBLISH.md',
+    'README.md',
+    'package.json',
+    'listing.json',
+    'catalog-entry.yml',
+    'build-patch.mjs',
+    'prove-collision.mjs',
+    'publish.mjs',
+    'submit-listing.mjs',
+    'verify-composition.mjs',
+    'verify-listing.mjs',
+    'verify-live-runtime.mjs',
+    'verify-patch.mjs',
+    'verify-peers.mjs',
+    'verify-real-loader.mjs',
+    'src/index.js',
+    'src/persona.md',
+    'cordis.patch.yml',
+    'lib/github.mjs',
+  ].map((p) => [p, read(...p.split('/'))]),
+);
 
 /** 把内容写到远端分支（存在则更新，不存在则新建），逐个文件一次提交。 */
 async function pushFile(path, content, message) {
