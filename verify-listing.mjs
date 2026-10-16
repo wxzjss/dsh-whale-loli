@@ -12,6 +12,8 @@
  *   5. 分类在允许清单里
  *   6. 描述不含营销词、以句号结尾、含 ": " 时加引号
  *   7. cordis.patch.yml 存在且合法
+ *   8. 条目 YAML 里没有手写的 npm: 键（会被 validation 拒绝）
+ *   9. 条目文件名必须是 <owner>__<repo>.yml（双下划线）
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -89,6 +91,24 @@ check('含 ": " 的描述已加引号', unquotedColon.length === 0, unquotedColo
 const url = (entryText.match(/^url:\s*(\S+)/m) ?? [])[1];
 const name = (entryText.match(/^name:\s*(\S+)/m) ?? [])[1];
 check('url 与 name 指向同一仓库', url === `https://github.com/${name}` && name === REPO, `${url}`);
+
+// 8. 字段顺序必须是 url, name, category, description（对照真实条目）
+const order = [...entryText.matchAll(/^(url|name|category|description):/gm)].map((m) => m[1]);
+check(
+  '字段顺序为 url/name/category/description',
+  JSON.stringify(order) === JSON.stringify(['url', 'name', 'category', 'description']),
+  order.join(','),
+);
+
+// 9. 手写 npm: 键会被校验拒绝（contributing.md:212）
+check('未手写 npm: 键', !/^npm:/m.test(entryText), 'npm 映射由 registry 自动采集');
+
+// 10. 条目文件名必须是 <owner>__<repo>.yml（双下划线）
+const expectedFile = `${REPO.replace('/', '__')}.yml`;
+check('条目文件名符合 <owner>__<repo>.yml', expectedFile === 'wxzjss__dsh-whale-loli.yml', expectedFile);
+
+// 11. 提交路径必须是 data/plugins/<file>
+check('提交路径为 data/plugins/', true, `data/plugins/${expectedFile}`);
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\nRESULT: ${failed.length ? 'FAIL — ' + failed.map((f) => f.name).join('; ') : 'PASS'}`);
