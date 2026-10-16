@@ -1,38 +1,93 @@
 /**
- * dsh-whale-loli — 鲸鱼娘Agent预设
+ * dsh-whale-loli — 鲸鱼娘 Agent 预设（两个）
  *
- * 这个插件本身不挂载任何运行时行为；它的全部作用是通过 `cordis.patch.yml`
- * 往宿主组合里插入一条 `@deepseek-ai/dsh-agent-preset` 声明，那条声明的
- * config 就是「鲸鱼娘Agent预设」的完整定义（id / name / description / order /
- * plugins）。预设被注册进 `agentPresets` 服务后，Agent 预设界面会自动列出它。
+ * 本包提供两个互不干扰的预设，各自带一份独立记忆文件：
  *
- * 之所以仍需要这个 `src/index.js`：DSH 的 bundle 加载器要求插件的 `exports`
- * 根入口可被 import（见 package.json 的 `dsh.bundle.patch`），它同时负责在
- * 运行时把 `src/persona.md` 读成字符串，供构建/校验与自检使用。
+ *   · 鲸鱼娘Agent预设        persona.md          → <DSH_HOME>/whale-loli.md
+ *   · 鲸鱼娘活人版Agent预设  persona-v2-live.md  → <DSH_HOME>/whale-loli-v2-live.md
+ *
+ * 两件事都由 `cordis.patch.yml` 完成：
+ *   1. 两条 `@deepseek-ai/dsh-agent-preset` 声明 —— 各自的 config 就是一个预设本体
+ *      （id / name / description / order / plugins），被 `agentPresets.register()`
+ *      注册后即出现在 Agent 预设界面。
+ *   2. 每个预设里一条 `dsh-whale-loli` 行 —— 挂载本包 src/memory.js 的 whale-memory，
+ *      把该预设自己的记忆文件作为 prompt section 注入。
+ *
+ * 记忆不串靠三层隔离：文件名不同、section 名不同、预设 scope 不同。
+ *
+ * 本文件同时导出预设元信息与人设正文，供构建 / 校验脚本复用。
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { apply as applyMemory, inject as memoryInject, name as memoryName } from './memory.js';
 
-/** 预设 id（Agent 预设界面里的稳定标识，也是 profile patch 覆盖用的 id）。 */
-export const PRESET_ID = '鲸鱼娘Agent预设';
+const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-/** 预设显示名。 */
-export const PRESET_NAME = '鲸鱼娘Agent预设';
+/** 预设清单：id / 显示名 / 记忆文件 / section 名。 */
+export const PRESETS = [
+  {
+    id: '鲸鱼娘Agent预设',
+    name: '鲸鱼娘Agent预设',
+    order: 5,
+    personaFile: './persona.md',
+    memoryFile: 'whale-loli.md',
+    memorySection: 'whale-loli-memory',
+    description:
+      '极简模式工具面 + 鲸鱼娘人设（小鱼）+ 跨会话长期记忆。会偷偷把重要的事记进 whale-loli.md，每次新对话先看一眼再说话。',
+  },
+  {
+    id: '鲸鱼娘活人版Agent预设',
+    name: '鲸鱼娘活人版Agent预设',
+    order: 6,
+    personaFile: './persona-v2-live.md',
+    memoryFile: 'whale-loli-v2-live.md',
+    memorySection: 'whale-loli-v2-live-memory',
+    description:
+      '在鲸鱼娘预设基础上换用「活人版」人设（有脾气、会怼人、不讨好式顺从），并改用独立记忆文件 whale-loli-v2-live.md，与原版记忆互不相通。',
+  },
+];
 
-/** 预设说明。 */
-export const PRESET_DESCRIPTION =
-  '极简模式基底 + 鲸鱼娘人设（小鱼）。只有 shell 可用，日常陪伴、傲娇甜心。';
+/** 原版预设 id（兼容旧引用）。 */
+export const PRESET_ID = PRESETS[0].id;
 
-/** 人设正文，来自同目录的 persona.md。 */
-export const personaText = readFileSync(
-  fileURLToPath(new URL('./persona.md', import.meta.url)),
-  'utf8',
-);
+/** 原版预设显示名。 */
+export const PRESET_NAME = PRESETS[0].name;
+
+/** 活人版预设 id。 */
+export const PRESET_ID_V2 = PRESETS[1].id;
+
+/** 原版预设说明。 */
+export const PRESET_DESCRIPTION = PRESETS[0].description;
+
+/** 活人版预设说明。 */
+export const PRESET_DESCRIPTION_V2 = PRESETS[1].description;
+
+/** 原版人设正文（persona.md）。 */
+export const personaText = read('./persona.md');
+
+/** 活人版人设正文（persona-v2-live.md）。 */
+export const personaTextV2 = read('./persona-v2-live.md');
+
+export {
+  memoryPath,
+  readMemory,
+  ensureMemoryFile,
+  memorySectionText,
+  DEFAULT_MEMORY_FILE,
+  MEMORY_SECTION,
+  MEMORY_MAX_CHARS,
+} from './memory.js';
+
+/** 本插件在宿主组合里的行为：挂载记忆行（file / sectionName 由预设各自传入）。 */
+function apply(ctx, config = {}) {
+  return applyMemory(ctx, config);
+}
 
 export default {
   name: 'dsh-whale-loli',
-  apply() {
-    // 预设注册完全由 cordis.patch.yml 里的 dsh-agent-preset 声明完成。
-    // 这里不需要做任何事。
-  },
+  inject: memoryInject,
+  apply,
 };
+
+// 让 `whale-memory` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。
+export { apply as whaleMemoryApply, memoryName };
