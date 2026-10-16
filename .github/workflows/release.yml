@@ -1,0 +1,71 @@
+# 用 npm Trusted Publishing (OIDC) 发布，不需要任何长期密钥。
+#
+# 触发方式：推一个形如 v0.2.0 的 tag。
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# 前置条件（在 npmjs.com 上配一次）：
+#   包 → Settings → Trusted publishing，绑定本仓库与 workflow 文件名 release.yml，
+#   并勾选允许 publish。或本地跑一次：
+#     npm trust github dsh-whale-loli --repo wxzjss/dsh-whale-loli \
+#       --file release.yml --allow-publish --yes
+#
+# 要点（踩过的坑）：
+#   · 必须给 job 加 `id-token: write`，否则拿不到 OIDC token。
+#   · npm CLI 必须 >= 11.5.1。Node 22 自带 npm 10，会在 registry 返回 404
+#     （那条 404 在撒谎：它实际含义是「我不知道你是谁」，不是「包不存在」），
+#     所以这里显式把 npm 升到 12，并打印版本以便排查。
+#   · workflow 文件名必须与 npm 上登记的一字不差（含 .yml）。
+#   · repository.url 必须与仓库对得上，否则 E422。
+#   · 源码仓库是公开的，可以带 provenance；这里不显式传 --provenance，
+#     让 npm 自己判断（显式传会强制开启，私有仓库时会 422）。
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # OIDC 必需
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # 保险：确保 npm CLI 高于 Trusted Publishing 的门槛 11.5.1
+      - name: Ensure npm supports OIDC trusted publishing
+        run: |
+          npm install -g npm@^12
+          node --version
+          npm --version
+
+      # 发布前把仓库里已有的校验脚本全跑一遍，不绿就不发
+      - name: Verify bundle patch, presets and memory isolation
+        run: |
+          node build-patch.mjs
+          git diff --exit-code cordis.patch.yml
+          node verify-patch.mjs cordis.patch.yml
+          node verify-real-loader.mjs cordis.patch.yml
+          node verify-composition.mjs
+          node verify-memory-isolation.mjs
+          node smoke-memory.mjs
+
+      # tag 版本号必须与 package.json 一致，避免发出错版本
+      - name: Check tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package.json=$PKG"
+          test "$TAG" = "$PKG"
+
+      # 不传 NODE_AUTH_TOKEN，也不传 --provenance，交给 npm 自己判断
+      - name: Publish to npm
+        run: npm publish --access public --ignore-scripts
