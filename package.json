@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-loli",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "鲸鱼娘 Agent 预设（两个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆。启用插件后自动在 Agent 预设界面添加「鲸鱼娘Agent预设」与「鲸鱼娘活人版Agent预设」，两者各带互不相通的记忆文件 whale-loli.md / whale-loli-v2-live.md。",
   "type": "module",
   "license": "MIT",
