@@ -65,7 +65,7 @@ const EXPECTED = [
     order: 6,
     memoryFile: 'whale-loli-v2-live.md',
     section: 'whale-loli-v2-live-memory',
-    personaMarker: '【PERSONA_LOAD｜小鱼·融合版】',
+    personaMarker: '角色卡：小鱼 / 鲸鱼娘',
   },
 ];
 
