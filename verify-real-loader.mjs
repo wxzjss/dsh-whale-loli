@@ -38,12 +38,13 @@ for (const r of rows) {
 }
 
 const WANT = [
-  { id: '鲸鱼娘Agent预设', file: 'whale-loli.md', section: 'whale-loli-memory' },
-  { id: '鲸鱼娘活人版Agent预设', file: 'whale-loli-v2-live.md', section: 'whale-loli-v2-live-memory' },
+  { id: '鲸鱼娘Agent预设', file: 'whale-loli.md', section: 'whale-loli-memory', turns: 80 },
+  { id: '鲸鱼娘活人版Agent预设', file: 'whale-loli-v2-live.md', section: 'whale-loli-v2-live-memory', turns: 80 },
   {
     id: '鲸鱼娘涩涩版Agent预设',
     file: 'whale-loli-v3-naughty.md',
     section: 'whale-loli-v3-naughty-memory',
+    turns: 80,
   },
 ];
 
@@ -64,7 +65,7 @@ for (const want of WANT) {
   console.log('config.plugins =', preset.config.plugins.map((p) => p.id).join(', '));
 
   const mem = preset.config.plugins.find((p) => p.id === 'whale-memory');
-  console.log('memory row     =', mem ? `file=${mem.config.file} section=${mem.config.sectionName}` : 'MISSING');
+  console.log('memory row     =', mem ? `file=${mem.config.file} section=${mem.config.sectionName} turnLimit=${mem.config.turnLimit}` : 'MISSING');
   if (!mem) {
     ok = false;
     continue;
@@ -75,6 +76,10 @@ for (const want of WANT) {
   }
   if (mem.config.sectionName !== want.section) {
     console.error(`  FAIL: section 应为 ${want.section}`);
+    ok = false;
+  }
+  if (mem.config.turnLimit !== want.turns) {
+    console.error(`  FAIL: turnLimit 应为 ${want.turns}，实为 ${mem.config.turnLimit}`);
     ok = false;
   }
   files.add(mem.config.file);

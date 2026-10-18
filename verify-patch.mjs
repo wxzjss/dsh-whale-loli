@@ -125,6 +125,10 @@ for (const want of EXPECTED) {
     if (mem.config.sectionName !== want.section) fail(`section 应为 ${want.section}`);
     if (seenFiles.has(mem.config.file)) fail(`记忆文件 ${mem.config.file} 被两个预设共用！`);
     if (seenSections.has(mem.config.sectionName)) fail(`section ${mem.config.sectionName} 重复！`);
+    // 对话记录滚动上限：三个预设都必须是 80
+    console.log('  turnLimit     =', mem.config.turnLimit, '| maxChars =', mem.config.maxChars);
+    if (mem.config.turnLimit !== 80) fail(`turnLimit 应为 80，实为 ${mem.config.turnLimit}`);
+    if (mem.config.maxChars !== 16000) fail(`maxChars 应为 16000，实为 ${mem.config.maxChars}`);
     seenFiles.add(mem.config.file);
     seenSections.add(mem.config.sectionName);
   }
@@ -139,6 +143,18 @@ for (const want of EXPECTED) {
   if (memRowCount !== 1) fail(`whale-memory 行应恰好 1 条，实为 ${memRowCount}`);
   if (!prefix.includes(`【MEMORY_SYSTEM: ${want.memoryFile}】`)) {
     fail(`人设缺少自己记忆段的标记 【MEMORY_SYSTEM: ${want.memoryFile}】`);
+  }
+
+  // 人设必须写清新的填写规则：两个区 + 每轮都记 + 80 轮滚动 + 重要记忆不占名额
+  for (const [label, needle] of [
+    ['分区：重要记忆', '## 重要记忆'],
+    ['分区：对话记录', '## 对话记录'],
+    ['每轮都记', '每一轮对话都要往「对话记录」里加一条'],
+    ['80 轮上限', '只保留最近 80 轮'],
+    ['重要记忆不占名额', '这个名额**只算「对话记录」**'],
+    ['长对话精简概括', '先精简概括再记'],
+  ]) {
+    if (!prefix.includes(needle)) fail(`人设缺少规则「${label}」`);
   }
 
   // 工具行

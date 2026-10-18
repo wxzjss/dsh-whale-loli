@@ -13,8 +13,18 @@
 
 ## 记忆功能
 
-小鱼会在聊天过程中**默默**把值得长期留存的东西（主人的偏好、习惯、忌讳、
-重要约定、答应过的事、称呼变化等）写进自己的记忆文件。
+小鱼的记忆本分**两个区**，写法和保留期完全不同：
+
+| 区 | 内容 | 保留期 |
+| --- | --- | --- |
+| `## 重要记忆` | 长期事实与约定（主人的偏好、忌讳、重要约定、正在做的事、答应过的事……） | **永久保留**，不被轮数挤掉 |
+| `## 对话记录` | **每一轮**对话都记一条 | 滚动窗口，**只留最近 80 轮**，超了从最旧滚出 |
+
+- **每轮都记**：不是挑着记。短对话直接记一条；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
+- **80 轮上限只算「对话记录」**：`## 重要记忆` 不占这个名额。系统提示里 `## 对话记录（N/80 轮）` 就是当前用量。
+- **想长期留的就往上挪**：某条对话以后还用得上，就总结一句写进 `## 重要记忆`；否则到点会被滚出去。
+- 上限有两道保险：注入时只取最近 80 轮（文件里堆再多也只进 80 轮）；`pruneMemoryFile()` 可以把文件本身裁到 80 轮。
+- 总长顶到 `maxChars`（16000）时，**先丢最旧的对话轮次**，重要记忆最后才动。
 
 每次新对话开始，记忆文件会**自动作为提示段注入**——不是等模型想起来去读，
 而是在系统提示组装时就带上，所以小鱼开口前就已经「看过」了。
@@ -43,8 +53,8 @@ C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
 ```
 
 文件不存在不会报错（该提示段自动留空）。主人可以直接编辑这三个文件。
-模板骨架（`#` 标题行、`>` 引用行）在注入时会被剥掉，所以文件里只有骨架时
-不会白占上下文。
+一级标题和 `>` 引用行在注入时会被剥掉；没写内容的 `###` 空小标题也会被丢掉，
+所以文件里只有骨架时不会白占上下文。
 
 ## 它做了什么
 
@@ -63,7 +73,7 @@ C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
 
 | 部分 | 说明 |
 | --- | --- |
-| 记忆 | `whale-memory`（本插件），`file` / `sectionName` / `maxChars: 6000` |
+| 记忆 | `whale-memory`（本插件），`file` / `sectionName` / `maxChars: 16000` / `turnLimit: 80` |
 | 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`，`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |
@@ -115,7 +125,8 @@ dsh-whale-loli/
 ├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与三预设隔离
 ├── verify-real-loader.mjs      # 用 DSH 自己的加载器校验 patch
 ├── verify-composition.mjs      # 校验 bundle+profile 合成后不重复注册
-├── verify-memory-isolation.mjs # 实测两个记忆文件不串
+├── verify-memory-isolation.mjs # 实测三个记忆文件不串
+├── verify-memory-rolling.mjs   # 实测两区结构与 80 轮滚动上限
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -133,7 +144,8 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 node verify-patch.mjs cordis.patch.yml     # patch 结构 + 三预设记忆隔离
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
-node verify-memory-isolation.mjs           # 记忆文件端到端隔离
+node verify-memory-isolation.mjs           # 记忆文件端到端隔离（三个预设）
+node verify-memory-rolling.mjs             # 重要记忆永久 + 对话记录 80 轮滚动
 node smoke-memory.mjs                      # 记忆行冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查

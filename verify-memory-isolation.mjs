@@ -21,8 +21,14 @@ const CASES = [
   },
 ];
 
-// 准备三个不同的记忆文件
-for (const c of CASES) writeFileSync(join(home, c.file), `# 头\n\n> 引用\n\n${c.body}\n`, 'utf8');
+// 准备三个不同的记忆文件（新格式：重要记忆 + 对话记录）
+for (const c of CASES) {
+  writeFileSync(
+    join(home, c.file),
+    `# 头\n\n> 引用\n\n## 重要记忆\n\n- ${c.body}\n\n## 对话记录\n\n- 2026-10-18 ${c.tag}的一轮对话\n`,
+    'utf8',
+  );
+}
 
 // 模拟宿主：给每个预设建一个独立 scope 上下文，记录它注册的 section
 function makeCtx() {
@@ -43,7 +49,7 @@ function makeCtx() {
 }
 
 const scopes = CASES.map(() => makeCtx());
-CASES.forEach((c, i) => mod.apply(scopes[i].ctx, { ...c, maxChars: 6000 }));
+CASES.forEach((c, i) => mod.apply(scopes[i].ctx, { ...c, maxChars: 16000, turnLimit: 80 }));
 
 const sections = scopes.map((s) => s.sections[0]);
 
@@ -85,7 +91,7 @@ check('模板骨架已被剥掉', texts.every((t) => !t.includes('# 头') && !t.
 for (const [i, c] of CASES.entries()) {
   const before = texts.slice();
   const marker = `${c.tag}追加了一条新记忆`;
-  writeFileSync(join(home, c.file), `# 头\n\n${marker}\n`, 'utf8');
+  writeFileSync(join(home, c.file), `# 头\n\n## 重要记忆\n\n- ${marker}\n`, 'utf8');
   const after = sections.map((s) => s.text());
   check(`改 ${c.file} 后自己更新`, after[i].includes(marker));
   check(

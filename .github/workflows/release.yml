@@ -59,6 +59,7 @@ jobs:
           node verify-real-loader.mjs cordis.patch.yml
           node verify-composition.mjs
           node verify-memory-isolation.mjs
+          node verify-memory-rolling.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -76,6 +77,13 @@ jobs:
           smoke="$(node smoke-memory.mjs 2>&1)"
           echo "$smoke"
           echo "$smoke" | grep -q "SMOKE OK"
+          rolling="$(node verify-memory-rolling.mjs 2>&1)"
+          echo "$rolling"
+          echo "$rolling" | grep -q "RESULT: PASS"
+          if echo "$rolling" | grep -q "\[skip\]"; then
+            echo "::error::verify-memory-rolling 在 CI 里被跳过了，但它不该跳过"
+            exit 1
+          fi
 
       # tag 版本号必须与 package.json 一致，避免发出错版本
       - name: Check tag matches package.json version

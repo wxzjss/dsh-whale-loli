@@ -93,9 +93,17 @@ export {
   readMemory,
   ensureMemoryFile,
   memorySectionText,
+  parseMemory,
+  composeMemory,
+  renderMemory,
+  pruneMemoryFile,
+  memoryTemplate,
   DEFAULT_MEMORY_FILE,
   MEMORY_SECTION,
   MEMORY_MAX_CHARS,
+  DEFAULT_TURN_LIMIT,
+  ZONE_PERMANENT,
+  ZONE_LOG,
 } from './memory.js';
 
 /** 本插件在宿主组合里的行为：挂载记忆行（file / sectionName 由预设各自传入）。 */
