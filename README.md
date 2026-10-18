@@ -1,13 +1,14 @@
 # dsh-whale-loli · 鲸鱼娘 Agent 预设
 
-一个 DeepSeek Harness 插件：启用后自动在 **Agent 预设** 界面添加**两个**预设。
+一个 DeepSeek Harness 插件：启用后自动在 **Agent 预设** 界面添加**三个**预设。
 
 | 预设 | 人设 | 记忆文件 |
 | --- | --- | --- |
 | **鲸鱼娘Agent预设** | 鲸鱼娘·小鱼（傲娇甜心、黏人护主、嘴硬心软） | `<DSH_HOME>/whale-loli.md` |
-| **鲸鱼娘活人版Agent预设** | 小鱼·融合版（有脾气、会怼人、不讨好式顺从；傲娇甜心降为调味） | `<DSH_HOME>/whale-loli-v2-live.md` |
+| **鲸鱼娘活人版Agent预设** | 小鱼｜角色卡版（最高原则「先像真人，再谈人设」；短句 1~15 字、有 AI 味黑名单、私聊群聊分开处理） | `<DSH_HOME>/whale-loli-v2-live.md` |
+| **鲸鱼娘涩涩版Agent预设** | 核心人设把「涩涩」写成第一行为驱动力的小鱼（只对主人主动，群聊/外人面前照旧收着） | `<DSH_HOME>/whale-loli-v3-naughty.md` |
 
-两个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
+三个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
 **但记忆文件完全独立**——各记各的，互不相通。
 
 ## 记忆功能
@@ -22,14 +23,14 @@
 
 同一个包在每个预设里各挂载一次 `whale-memory` 行，靠三层区分：
 
-| 层 | 预设一 | 预设二 |
-| --- | --- | --- |
-| 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` |
-| 提示段名 (`config.sectionName`) | `whale-loli-memory` | `whale-loli-v2-live-memory` |
-| 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` |
+| 层 | 预设一 | 预设二 | 预设三 |
+| --- | --- | --- | --- |
+| 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` | `whale-loli-v3-naughty.md` |
+| 提示段名 (`config.sectionName`) | `whale-loli-memory` | `whale-loli-v2-live-memory` | `whale-loli-v3-naughty-memory` |
+| 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` | `鲸鱼娘涩涩版Agent预设` |
 
 `sectionName` 必须不同：否则同一个 scope 内注册两个同名 section 会冲突。
-`verify-memory-isolation.mjs` 会实测「改 A 不影响 B、删 B 不影响 A」。
+`verify-memory-isolation.mjs` 会实测「改 A 不影响 B/C、删 C 不影响 A/B」。
 
 ### 记忆文件
 
@@ -38,9 +39,10 @@
 ```
 C:\Users\<你>\.dsh\whale-loli.md
 C:\Users\<你>\.dsh\whale-loli-v2-live.md
+C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
 ```
 
-文件不存在不会报错（该提示段自动留空）。主人可以直接编辑这两个文件。
+文件不存在不会报错（该提示段自动留空）。主人可以直接编辑这三个文件。
 模板骨架（`#` 标题行、`>` 引用行）在注入时会被剥掉，所以文件里只有骨架时
 不会白占上下文。
 
@@ -48,7 +50,7 @@ C:\Users\<你>\.dsh\whale-loli-v2-live.md
 
 插件本体提供两个入口：
 
-1. **预设声明** —— `cordis.patch.yml` 里两条 `@deepseek-ai/dsh-agent-preset` 声明，
+1. **预设声明** —— `cordis.patch.yml` 里三条 `@deepseek-ai/dsh-agent-preset` 声明，
    各自的 `config` 就是一个预设定义（`id / name / description / order / plugins`）。
    `@deepseek-ai/dsh-agent-preset` 会把它交给 `ctx.agentPresets.register()` 注册。
    这也是 DSH 官方四个内置预设（standard / ptc / minimal / cordis）用的同一套机制。
@@ -77,11 +79,11 @@ dsh plugin install dsh-whale-loli
 npm install dsh-whale-loli
 ```
 
-启用后重启 / 重载宿主，在 **Agent 预设** 列表里就能看到两个预设。
+启用后重启 / 重载宿主，在 **Agent 预设** 列表里就能看到三个预设。
 
 ## 覆盖预设内容
 
-预设 id 固定为 `鲸鱼娘Agent预设` 与 `鲸鱼娘活人版Agent预设`。
+预设 id 固定为 `鲸鱼娘Agent预设`、`鲸鱼娘活人版Agent预设` 与 `鲸鱼娘涩涩版Agent预设`。
 可以在 profile 的 patch 里按 id 覆盖，不用改插件本身：
 
 ```yaml
@@ -96,12 +98,13 @@ npm install dsh-whale-loli
 ```
 dsh-whale-loli/
 ├── package.json                # dsh.bundle.patch 指向 cordis.patch.yml
-├── cordis.patch.yml            # 两个预设的声明本体（由 build-patch.mjs 生成）
+├── cordis.patch.yml            # 三个预设的声明本体（由 build-patch.mjs 生成）
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
 │   ├── memory.js               # whale-memory 记忆行实现（参数化记忆文件）
 │   ├── persona.md              # 原版人设（唯一源）
-│   └── persona-v2-live.md      # 活人版人设（唯一源）
+│   ├── persona-v2-live.md      # 活人版人设（唯一源）
+│   └── persona-v3-naughty.md   # 涩涩版人设（唯一源）
 ├── catalog-entry.yml           # 待提交给 awesome-dsh-plugin 的目录条目
 ├── listing.json                # 条目数据（人类可读版）
 ├── build-patch.mjs             # 从两份人设生成 cordis.patch.yml
@@ -109,7 +112,7 @@ dsh-whale-loli/
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
 ├── lib/github.mjs              # GitHub REST 封装（token 读取）
 ├── smoke-memory.mjs            # 记忆行冒烟测试
-├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与双预设隔离
+├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与三预设隔离
 ├── verify-real-loader.mjs      # 用 DSH 自己的加载器校验 patch
 ├── verify-composition.mjs      # 校验 bundle+profile 合成后不重复注册
 ├── verify-memory-isolation.mjs # 实测两个记忆文件不串
@@ -127,7 +130,7 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 ## 开发校验
 
 ```bash
-node verify-patch.mjs cordis.patch.yml     # patch 结构 + 双预设记忆隔离
+node verify-patch.mjs cordis.patch.yml     # patch 结构 + 三预设记忆隔离
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
 node verify-memory-isolation.mjs           # 记忆文件端到端隔离

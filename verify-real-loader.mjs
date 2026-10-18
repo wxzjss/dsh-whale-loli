@@ -1,11 +1,11 @@
 // 用 DSH 自己的 loadOverlayPatches + composeEntries 校验插件 patch，
 // 这是宿主真正的接受路径（而不是自己复刻一份校验逻辑）。
-// 两个预设都要过，并确认记忆行没有串。
-// 本机没装 DSH（例如 CI）时优雅跳过。
+// 三个预设都要过，并确认记忆行没有串。
+// 本机没有可读的 dsh-app-boot（例如 CI / Desktop 的 app.asar）时优雅跳过。
 import { pathToFileURL } from 'node:url';
-import { requireDshRoot } from './lib/dsh-root.mjs';
+import { requireHostPackage } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = requireDshRoot('dsh-app-boot');
+const DSH_ROOT = requireHostPackage('dsh-app-boot');
 const boot = await import(
   pathToFileURL(DSH_ROOT + '/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js').href
 );
@@ -40,6 +40,11 @@ for (const r of rows) {
 const WANT = [
   { id: '鲸鱼娘Agent预设', file: 'whale-loli.md', section: 'whale-loli-memory' },
   { id: '鲸鱼娘活人版Agent预设', file: 'whale-loli-v2-live.md', section: 'whale-loli-v2-live-memory' },
+  {
+    id: '鲸鱼娘涩涩版Agent预设',
+    file: 'whale-loli-v3-naughty.md',
+    section: 'whale-loli-v3-naughty-memory',
+  },
 ];
 
 let ok = true;

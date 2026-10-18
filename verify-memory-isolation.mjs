@@ -1,5 +1,5 @@
-// 端到端隔离证明：给两个预设各挂一次 whale-memory，写入不同的记忆内容，
-// 断言两条 section 各自只读到自己的文件，绝不串。
+// 端到端隔离证明：给三个预设各挂一次 whale-memory，写入不同的记忆内容，
+// 断言三条 section 各自只读到自己的文件，绝不串。
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,9 +9,20 @@ process.env.DSH_HOME = home;
 
 const mod = await import('./src/memory.js');
 
-// 准备两个不同的记忆文件
-writeFileSync(join(home, 'whale-loli.md'), '# 头\n\n> 引用\n\n普通版：主人爱喝冰美式。\n', 'utf8');
-writeFileSync(join(home, 'whale-loli-v2-live.md'), '# 头\n\n> 引用\n\n活人版：主人怕黑。\n', 'utf8');
+// 与 patch 里三条记忆行的 config 完全一致
+const CASES = [
+  { file: 'whale-loli.md', sectionName: 'whale-loli-memory', body: '普通版：主人爱喝冰美式。', tag: '普通版' },
+  { file: 'whale-loli-v2-live.md', sectionName: 'whale-loli-v2-live-memory', body: '活人版：主人怕黑。', tag: '活人版' },
+  {
+    file: 'whale-loli-v3-naughty.md',
+    sectionName: 'whale-loli-v3-naughty-memory',
+    body: '涩涩版：主人喜欢被主动黏。',
+    tag: '涩涩版',
+  },
+];
+
+// 准备三个不同的记忆文件
+for (const c of CASES) writeFileSync(join(home, c.file), `# 头\n\n> 引用\n\n${c.body}\n`, 'utf8');
 
 // 模拟宿主：给每个预设建一个独立 scope 上下文，记录它注册的 section
 function makeCtx() {
@@ -31,23 +42,15 @@ function makeCtx() {
   };
 }
 
-const a = makeCtx();
-const b = makeCtx();
+const scopes = CASES.map(() => makeCtx());
+CASES.forEach((c, i) => mod.apply(scopes[i].ctx, { ...c, maxChars: 6000 }));
 
-// 与 patch 里两条记忆行的 config 完全一致
-mod.apply(a.ctx, { file: 'whale-loli.md', sectionName: 'whale-loli-memory', maxChars: 6000 });
-mod.apply(b.ctx, { file: 'whale-loli-v2-live.md', sectionName: 'whale-loli-v2-live-memory', maxChars: 6000 });
+const sections = scopes.map((s) => s.sections[0]);
 
-const sa = a.sections[0];
-const sb = b.sections[0];
+console.log('section 名 =', sections.map((s) => s.name).join(' | '));
 
-console.log('section A name =', sa.name);
-console.log('section B name =', sb.name);
-
-const ta = sa.text();
-const tb = sb.text();
-console.log('\n--- A 注入文本 ---\n' + ta);
-console.log('\n--- B 注入文本 ---\n' + tb);
+const texts = sections.map((s) => s.text());
+CASES.forEach((c, i) => console.log(`\n--- ${c.tag} 注入文本 ---\n${texts[i]}`));
 
 let ok = true;
 const check = (label, cond) => {
@@ -56,34 +59,50 @@ const check = (label, cond) => {
 };
 
 console.log('\n断言：');
-check('两个 section 名不同', sa.name !== sb.name);
-check('A 只含普通版内容', ta.includes('主人爱喝冰美式') && !ta.includes('主人怕黑'));
-check('B 只含活人版内容', tb.includes('主人怕黑') && !tb.includes('主人爱喝冰美式'));
-check('A 标题指向 whale-loli.md', ta.includes('【鲸鱼记忆 · whale-loli.md】'));
-check('B 标题指向 whale-loli-v2-live.md', tb.includes('【鲸鱼记忆 · whale-loli-v2-live.md】'));
-check('A 不出现 v2 文件名', !ta.includes('whale-loli-v2-live.md'));
-check('B 不出现 v1 文件名', !tb.includes('whale-loli.md'));
-check('模板骨架已被剥掉', !ta.includes('# 头') && !ta.includes('> 引用'));
 
-// 反向验证：A 写完不影响 B
-writeFileSync(join(home, 'whale-loli.md'), '# 头\n\n普通版追加了一条新记忆。\n', 'utf8');
-const ta2 = sa.text();
-const tb2 = sb.text();
-check('A 改动后 A 更新', ta2.includes('追加了一条新记忆'));
-check('A 改动后 B 完全不变', tb2 === tb);
+// 1) 三个 section 名互不相同
+const names = sections.map((s) => s.name);
+check('三个 section 名互不相同', new Set(names).size === 3);
 
-// 反向：B 写完不影响 A
-writeFileSync(join(home, 'whale-loli-v2-live.md'), '# 头\n\n活人版也追加了一条。\n', 'utf8');
-const ta3 = sa.text();
-const tb3 = sb.text();
-check('B 改动后 B 更新', tb3.includes('活人版也追加了一条'));
-check('B 改动后 A 完全不变', ta3 === ta2);
+// 2) 每条 section 只含自己的内容，不含另外两个
+for (const [i, c] of CASES.entries()) {
+  const others = CASES.filter((_, j) => j !== i);
+  const leaked = others.filter((o) => texts[i].includes(o.body));
+  check(
+    `${c.tag} 只含自己的内容${leaked.length ? '（串了：' + leaked.map((o) => o.tag).join('、') + '）' : ''}`,
+    texts[i].includes(c.body) && leaked.length === 0,
+  );
+  check(`${c.tag} 标题指向 ${c.file}`, texts[i].includes(`【鲸鱼记忆 · ${c.file}】`));
+  const otherFiles = others.filter((o) => texts[i].includes(o.file));
+  check(
+    `${c.tag} 不出现别的记忆文件名${otherFiles.length ? '（出现了：' + otherFiles.map((o) => o.file).join('、') + '）' : ''}`,
+    otherFiles.length === 0,
+  );
+}
+check('模板骨架已被剥掉', texts.every((t) => !t.includes('# 头') && !t.includes('> 引用')));
 
-// 只有一个文件存在时，另一个不误读
-rmSync(join(home, 'whale-loli-v2-live.md'));
-check('删掉 B 文件后 B 为空', sb.text() === '');
-check('删掉 B 文件后 A 正常', sa.text().includes('追加了一条新记忆'));
+// 3) 反向验证：改第 i 个文件，只有第 i 条 section 变，其余完全不变
+for (const [i, c] of CASES.entries()) {
+  const before = texts.slice();
+  const marker = `${c.tag}追加了一条新记忆`;
+  writeFileSync(join(home, c.file), `# 头\n\n${marker}\n`, 'utf8');
+  const after = sections.map((s) => s.text());
+  check(`改 ${c.file} 后自己更新`, after[i].includes(marker));
+  check(
+    `改 ${c.file} 后另外两个完全不变`,
+    CASES.every((_, j) => j === i || after[j] === before[j]),
+  );
+  texts[i] = after[i];
+}
+
+// 4) 只删一个文件，另外两个照常
+rmSync(join(home, CASES[2].file));
+check(`删掉 ${CASES[2].file} 后该 section 为空`, sections[2].text() === '');
+check(
+  '删掉一个文件后另外两个仍正常',
+  sections[0].text().includes(CASES[0].tag) && sections[1].text().includes(CASES[1].tag),
+);
 
 rmSync(home, { recursive: true, force: true });
-console.log('\nRESULT:', ok ? 'PASS —— 两个记忆文件完全隔离' : 'FAIL');
+console.log('\nRESULT:', ok ? 'PASS —— 三个记忆文件完全隔离' : 'FAIL');
 process.exit(ok ? 0 : 1);

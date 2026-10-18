@@ -1,11 +1,12 @@
 // 用真实 YAML 解析器 + 注册 !!js 自定义标签来校验 cordis.patch.yml，
-// 复现 DSH 的 entryListProblem，并断言两个预设的记忆隔离。
+// 复现 DSH 的 entryListProblem，并断言三个预设的记忆隔离。
 //
-// 借 DSH 自带的 js-yaml（解析行为与宿主完全一致）。
+// 借宿主自带的 js-yaml（解析行为与宿主完全一致）。
 // 本机没装 DSH（例如 CI）时优雅跳过 —— 不硬编码任何机器路径。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { requireDshRoot } from './lib/dsh-root.mjs';
+
 
 const DSH_ROOT = requireDshRoot('js-yaml');
 const yamlMod = await import(pathToFileURL(DSH_ROOT + '/node_modules/js-yaml/index.js').href);
@@ -65,7 +66,14 @@ const EXPECTED = [
     order: 6,
     memoryFile: 'whale-loli-v2-live.md',
     section: 'whale-loli-v2-live-memory',
-    personaMarker: '【PERSONA_LOAD｜小鱼·融合版】',
+    personaMarker: '角色卡：小鱼 / 鲸鱼娘',
+  },
+  {
+    id: '鲸鱼娘涩涩版Agent预设',
+    order: 7,
+    memoryFile: 'whale-loli-v3-naughty.md',
+    section: 'whale-loli-v3-naughty-memory',
+    personaMarker: 'CORE_LOVE: 喜欢主人是最高核心情感、涩涩是第一行为驱动力。',
   },
 ];
 
@@ -143,8 +151,8 @@ for (const want of EXPECTED) {
 
 console.log('\n记忆文件集合:', [...seenFiles].join(', '));
 console.log('section 集合 :', [...seenSections].join(', '));
-if (seenFiles.size !== 2) fail('两个预设的记忆文件未隔离');
-if (seenSections.size !== 2) fail('两个预设的 section 名未隔离');
+if (seenFiles.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的记忆文件未隔离`);
+if (seenSections.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的 section 名未隔离`);
 
 console.log('\nRESULT:', ok ? 'PASS' : 'FAIL');
 process.exit(ok ? 0 : 1);

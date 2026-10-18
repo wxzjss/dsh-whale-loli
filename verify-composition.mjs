@@ -1,14 +1,14 @@
 // 组合体检：bundle 层 + profile 层合成后，
-// 断言两个预设都在、记忆行不串、没有重复 row id。
+// 断言三个预设都在、记忆行不串、没有重复 row id。
 //
 // 这需要本机真的有 DSH 安装与 desktop profile；CI 里没有，故优雅跳过。
 import { pathToFileURL } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { requireDshRoot } from './lib/dsh-root.mjs';
+import { requireHostPackage } from './lib/dsh-root.mjs';
 
-const DSH_ROOT = requireDshRoot('dsh-app-boot');
+const DSH_ROOT = requireHostPackage('dsh-app-boot');
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 const PROFILE = process.env.DSH_PROFILE_DIR || join(DSH_HOME, 'profiles', 'desktop');
 
@@ -81,11 +81,12 @@ for (const [id, list] of byId) {
 const both =
   byId.has('鲸鱼娘Agent预设') &&
   byId.has('鲸鱼娘活人版Agent预设') &&
-  memFiles.size === 2 &&
-  memSections.size === 2 &&
+  byId.has('鲸鱼娘涩涩版Agent预设') &&
+  memFiles.size === 3 &&
+  memSections.size === 3 &&
   dupes.length === 0;
 
-console.log('\n两个预设都在:', byId.has('鲸鱼娘Agent预设') && byId.has('鲸鱼娘活人版Agent预设'));
+console.log('\n三个预设都在:', both && byId.size >= 3);
 console.log('记忆文件数:', memFiles.size, '|', [...memFiles].join(', '));
 console.log('section 数 :', memSections.size, '|', [...memSections].join(', '));
 console.log('\nRESULT:', both ? 'PASS' : 'FAIL');
