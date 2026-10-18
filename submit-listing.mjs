@@ -32,10 +32,31 @@ const ENTRY_PATH = 'data/plugins/wxzjss__dsh-whale-loli.yml';
 const localOnly = process.argv.includes('--local-only');
 const perFile = process.argv.includes('--per-file');
 
-/** 需要同步到 GitHub 的文件 → 内容。 */
+/**
+ * 需要同步到 GitHub 的文件 → 内容。
+ *
+ * 必须先问 git 要**已入库的 blob**，不能直接读工作区文件：`.gitattributes` 里
+ * `* text=auto eol=lf` 让 git 一律按 LF 入库，而 Windows 工作区里可能是 CRLF。
+ * 早先这里读的是工作区字节，于是 CRLF 被原样推上 GitHub —— 远端 blob 的 sha
+ * 与 `git rev-parse HEAD:path` 对不上（v0.3.0 的 src/persona-v3-naughty.md 就是
+ * 这么岔开的：远端 6241 B / CRLF，git 里 6185 B / LF）。
+ *
+ * `git show HEAD:<path>` 拿到的东西，和 `git ls-files` 列出的路径一一对应，
+ * 也正是 GitHub 上应该有的字节。没有 git（或文件未入库）时退回读盘。
+ */
 function read(...p) {
-  const url = new URL('./' + p.join('/'), ROOT);
-  return existsSync(url) ? readFileSync(url, 'utf8') : null;
+  const rel = p.join('/');
+  const url = new URL('./' + rel, ROOT);
+  if (!existsSync(url)) return null;
+  try {
+    return execFileSync('git', ['show', `HEAD:${rel}`], {
+      cwd: fileURLToPath(ROOT),
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch {
+    return readFileSync(url, 'utf8');
+  }
 }
 
 /**
@@ -127,6 +148,24 @@ async function syncLocalCommits() {
  */
 async function syncAtomic() {
   console.log('=== 用 Git Trees API 一次性同步（单提交，避免半吊子状态）===');
+
+  // 同步的是**已提交**的内容（`git show HEAD:<path>`）。工作区若有未提交改动，
+  // 说明作者眼前看到的东西和将要推上去的不是一回事 —— 那是静默推旧内容，必须拦下。
+  // 想推工作区现状就先 `git add -A && git commit`。
+  try {
+    const dirty = execFileSync('git', ['status', '--porcelain'], {
+      cwd: fileURLToPath(ROOT),
+      encoding: 'utf8',
+    }).trim();
+    if (dirty !== '') {
+      console.error('\n工作区有未提交改动，同步的会是 HEAD 里的旧内容：\n' + dirty);
+      console.error('先 commit 再同步，否则 GitHub 上的源码和本地不一致。');
+      process.exit(1);
+    }
+  } catch (e) {
+    if (e.status === 1) throw e;
+    console.warn('  （拿不到 git status，跳过干净检查）');
+  }
 
   // 1. 当前 HEAD
   const headRef = await glab(`/repos/${REPO}/git/ref/heads/${BRANCH}`);
