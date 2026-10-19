@@ -156,6 +156,41 @@ export function shadowedNodes(session, startSeq, endSeq) {
   return nodes.filter((seq) => seq >= startSeq && seq <= endSeq);
 }
 
+/** 提示条事件的唯一构造点。 */
+function noticePayload(plan) {
+  return {
+    id: randomUUID(),
+    role: 'user',
+    content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
+    source: { kind: NOTICE_SOURCE_KIND },
+  };
+}
+
+/**
+ * 本地预检：把宿主 `dsh-session-format-v3-to-v4` 的规则在**写之前**自己先跑一遍。
+ *
+ * 为什么需要：连踩四次都是「写出去才被宿主拒收」，而拒收会直接打死整个回合
+ * （`turn/end {kind:'error'}`），用户看到的就是一句看不懂的校验错误。预检之后，
+ * 形状不对只会让我们**跳过这次裁剪**，对话继续。
+ *
+ * 校验项（对 `user/message`）：
+ *   1. `assertOrdinaryMessage` —— `role !== 'developer'`、`content` 必须是数组
+ *   2. `assertV4MessageSources` —— `source` 是对象、`source.kind` 非空且 ≠ `'plugin'`
+ *   3. 本插件额外要求 `id` 非空（真实消息都有，便于溯源）
+ */
+export function noticeIsValid(message) {
+  const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isObject(message)) return false;
+  if (typeof message.id !== 'string' || message.id.length === 0) return false;
+  if (message.role === 'developer') return false;
+  if (!Array.isArray(message.content)) return false;
+  const source = message.source;
+  if (!isObject(source)) return false;
+  if (typeof source.kind !== 'string' || source.kind.length === 0) return false;
+  if (source.kind === 'plugin') return false;
+  return true;
+}
+
 /**
  * 执行裁剪。返回计划；无需裁剪返回 null。
  *
@@ -181,14 +216,13 @@ export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
   const shadowed = shadowedNodes(session, plan.startSeq, plan.endSeq);
   if (shadowed.length === 0) return null;
 
+  const message = noticePayload(plan);
+  // 预检不过就跳过：宁可这次不裁，也不写一个会被宿主拒收、拖垮整回合的事件。
+  if (!noticeIsValid(message)) return null;
+
   session.append(
     'user/message',
-    {
-      id: randomUUID(),
-      role: 'user',
-      content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
-      source: { kind: NOTICE_SOURCE_KIND },
-    },
+    message,
     {
       surfaceOp: { op: 'replace', startSeq: plan.startSeq, endSeq: plan.endSeq },
       sourceEventSeqs: shadowed,

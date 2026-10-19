@@ -312,5 +312,33 @@ console.log('\n=== 10. 提示条必须合法、且不能被算成一轮 ===');
   check('第二次也无校验违规', s._violations.length === 0, s._violations.join(' | '));
 }
 
-console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，waterfall 放行，提示条合法且不计轮' : 'FAIL');
+console.log('\n=== 11. 写之前先自检：四种踩过的错误形状必须被拦下 ===');
+{
+  // 预检的意义：形状不对 → 跳过裁剪（对话继续），而不是写出去被宿主拒收（整回合死）。
+  const good = {
+    id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    role: 'user',
+    content: [{ type: 'text', text: '【已裁剪更早的对话】' }],
+    source: { kind: 'history-window' },
+  };
+  check('合法形状 → 通过', mod.noticeIsValid(good) === true);
+
+  const cases = [
+    ['缺 id（0.5.3 真实踩到）', { ...good, id: undefined }],
+    ['id 为空串', { ...good, id: '' }],
+    ['缺 source（0.5.3 真实踩到）', { ...good, source: undefined }],
+    ['source.kind 为空串', { ...good, source: { kind: '' } }],
+    ['source.kind = plugin（宿主明令禁止）', { ...good, source: { kind: 'plugin' } }],
+    ['source 不是对象', { ...good, source: 'history-window' }],
+    ['role = developer（会触发 developer 校验）', { ...good, role: 'developer' }],
+    ['content 不是数组', { ...good, content: 'text' }],
+    ['整体不是对象', null],
+    ['整体是数组', []],
+  ];
+  for (const [label, payload] of cases) {
+    check(`拦下：${label}`, mod.noticeIsValid(payload) === false);
+  }
+}
+
+console.log('\nRESULT:', ok ? 'PASS —— 历史裁到最近 N 轮，waterfall 放行，提示条通过本地预检' : 'FAIL');
 process.exit(ok ? 0 : 1);
