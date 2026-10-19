@@ -81,7 +81,7 @@ const winRows = [...patch.matchAll(/^\s+-\s+id:\s*whale-history-window\b/gm)];
 check('history-window 插件行 = 0', winRows.length === 0, `实际 ${winRows.length}`);
 check('没有任何行引用 dsh-whale-loli/history-window', !/name:\s*'dsh-whale-loli\/history-window'/.test(patch));
 check('不再自己写 surfaceOp:replace', !/op:\s*'replace'/.test(patch));
-for (const rule of ['不被动', '可以主动去找', '默认当它不存在']) {
+for (const rule of ['压缩插件', '摘要也是依据', '需要细节就自己去翻']) {
   check(`人设含提示层约束「${rule}」`, patch.includes(rule));
 }
 

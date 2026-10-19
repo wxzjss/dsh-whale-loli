@@ -1,7 +1,7 @@
 {
   "name": "dsh-whale-loli",
-  "version": "0.5.11",
-  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆（提示变量通道，per-preset 独立文件）+ 提示层「最近 20 轮」约束（不被动引用、可主动去翻）。历史压缩插件已移除：预设作用域取不到宿主的 compaction 服务，挂载会拖挂会话 resume。",
+  "version": "0.5.12",
+  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆（提示变量通道，per-preset 独立文件）。上下文压缩交给 billion-context 插件；本插件不挂 history-window（预设作用域取不到宿主的 compaction 服务，挂载会拖挂会话 resume）。",
   "type": "module",
   "license": "MIT",
   "keywords": [

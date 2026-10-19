@@ -57,8 +57,9 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
           # 替代方案（都不需要插件）：
           #   · 宿主自带 /compact 命令，手动压一次；
           #   · 或者直接开新会话。
-          # 人设里仍保留「最近 20 轮」的提示层约束（不被动引用 + 允许主动去翻），
-          # 它不省 token，但能约束行为。
+          # 压缩交给 billion-context 插件自己做（它会把旧内容压成摘要）；
+          # 人设里保留提示层：认摘要为依据 + 需要原文时自己翻
+          # （search_context / decompress / 解压旧日志）。
           # 代码与单测留在 src/history-window.js，等宿主放开再说。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'

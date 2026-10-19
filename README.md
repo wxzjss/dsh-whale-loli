@@ -36,102 +36,55 @@
 人设开头就是这一段，随人设一起进系统提示：
 
 ```
-【每轮先看 · 本预设记忆 + 当前会话最近 20 轮】
+【每轮先看 · 本预设记忆 + 当前会话上下文】
 {{whale_memory}}
 ```
 
-即：每轮开口前必须看 ①**本预设自己的记忆文件**；②**当前会话最近 20 轮**上下文。
+即：每轮开口前必须看 ①**本预设自己的记忆文件**；②**当前会话的上下文**（原文或压缩摘要）。
 **只看自己这一份**——绝不读、不写其他预设的记忆文件。
 
-### 20 轮是真的裁，不是嘴上说说
+### 上下文压缩：交给 billion-context，本插件不插手
 
-**这一点很重要**：只在人设里写「看最近 20 轮」是**空话**——宿主不会因为那句话就不发旧消息。
-实测本机最长会话 33 轮 / 85 条 user 消息 / 1565 条 tool 结果，全部发给模型；
-宿主自带的 compaction 只在 token 压力超阈值时才压，粒度是「保留一段 token 尾巴」，**不是轮数**。
+**本插件不裁剪历史**。对话变长后的压缩由 `billion-context` 插件负责：它会在 profile 层
+把宿主的 `compaction-basic` 关掉（`auto: false`）换成自己的实现，并暴露
+`compress` / `decompress` / `search_context` / `acp_status` 四个工具。
 
-所以插件附带 `history-window` 行，用宿主自己的表层替换机制做**纯删除**：
+人设里只保留三条使用约定：
 
-```js
-session.append('developer/message', 提示条, {
-  surfaceOp: { op: 'replace', startSeq, endSeq },
-})
-```
-
-被覆盖的表层节点从 `deriveMessages()` 消失——模型真的收不到；会话日志仍保留（可回溯）。
-**不调 LLM、不花 token、不生成摘要。**
-
-三条安全线：
-
-| 线 | 做法 |
+| 约定 | 含义 |
 | --- | --- |
-| 工具配对不切断 | 切点必须落在「没有未回应 tool-call」处，复用与 compaction 同款的平衡判定 |
-| 系统提示不裁 | 裁剪起点是第一个 `user/message`，**绝不是**表层第 0 个节点 |
-| 默认关闭 | 必须 `enable: true` 才裁（本插件预设已开启，`keepTurns: 20`） |
+| 上下文由压缩插件管 | 旧内容被压成摘要、看不到原文是正常的，不是记忆丢失 |
+| 摘要也是依据 | 压缩留下的摘要就是上下文，照常用，不许当它不存在 |
+| 需要细节就自己去翻 | `search_context` 搜 → `decompress` 取原文 → 必要时解压旧日志 grep |
 
-挂载点为 `agent/pre-step`：循环在**派生历史之前**运行它，是唯一既在请求前、又拿得到本 agent 的时机。
+翻旧日志的路径：`<DSH_HOME>/sessions/<工作目录>/<会话>/session.v4.jsonl.zstd`
+（zstd 压缩，需先用 pwsh 调 node 解压再搜，别对 `.zstd` 直接 grep）。
 
-#### 现在的做法：交给宿主压缩，不自己写事件
+#### 为什么不用自制 history-window（踩过的坑，留档）
 
-> **历史改动**：曾经用 `session.append(...)` + `surfaceOp: replace` 自己做纯删除，连崩四次
-> （`turn must be positive` → `requires id, role, content, and a producer-owned source` …），
-> 因为 `dsh-session-format-v3-to-v4` 对事件形状的要求极严，**少一项就是整个回合失败**。
+本插件曾经自己写 `surfaceOp: replace` 事件做纯删除，连崩四次；后来改用宿主的
+`ctx.compaction.compactRegion()`，又因为**预设作用域里取不到 `compaction` 服务**而失败：
 
-现在改为调用宿主自己的压缩服务：
+| inject 写法 | 结果 |
+| --- | --- |
+| `[]` | 加载即抛 `cannot get property "compaction" without inject` → `resume failed` |
+| `['compaction']` | 永远 `waiting for compaction` → `resume failed` |
+| `['sessions']` | 读 `ctx.compaction` 静默失败，裁剪死寂 |
 
-```js
-ctx.compaction.compactRegion(start, end, agent)   // 切点由我们算，摘要/写事件/校验由宿主做
-```
+结论：这条路在预设层走不通，得宿主把 compaction 暴露到预设作用域（或提供按轮压缩的正式 API）。
+因此三个预设里**不挂任何压缩相关插件行**；`src/history-window.js` 与
+`verify-history-window.mjs` 仅作代码保留。`verify-patch.mjs` / `verify-runs.mjs`
+会反向断言「挂载行数 = 0」，防止有人手滑再加回去。
 
-- 触发时机：`agent/status === 'idle'`（压缩服务拒绝 active 会话），且**不 await**，绝不拖住对话。
-- 结果：`[start, end]` 这段旧节点被替换成**一条摘要**，原始旧消息不再计入输入。
-- 天然限流：裁完轮数掉回 20，要再长到超过 20 才会触发，不会每轮都调摘要。
-- 失败只跳过本次，`try/catch` + `.catch(() => {})` 双保险，绝不影响对话。
-#### ⚠️ `agent/pre-step` 是 waterfall，必须 `return next()`
+三个顺带记下的宿主行为（以后换实现仍会踩）：
 
-Cordis 的实现是这样的：
+- `agent/pre-step` 是 **waterfall**：不 `return next()` 的监听器会否决整条链，
+  返回 `undefined` 会让 agent-loop 炸 `Cannot read properties of undefined (reading 'kind')`。
+- `dsh-session-format-v3-to-v4` 对消息形状极严：`turn`/`step` 必须是正整数，
+  `developer/message` 还必须带 producer-owned `source`——少一项就是整个回合失败。
+- 宿主的运行时上下文同样是 `user/message`（`source.kind = 'runtime-context'`），
+  统计轮数时要排除，否则会算多。
 
-```js
-waterfall (...args) {
-  const cbs = this.dispatch('waterfall', args)
-  const inner = args.pop()
-  const next = () => (cbs.shift() ?? inner)(...args)
-  args.push(next)
-  return next()
-}
-```
-
-**不调用 `next()` 的监听器会否决整条链**，并把自己的返回值当成最终结果。
-本插件曾经写成 `async (payload) => { …裁剪… }`（不接 `next`、返回 `undefined`），于是
-`agent/pre-step` 的 decision 变成 `undefined`，agent-loop 里 `decision.kind` 直接炸：
-
-```
-Cannot read properties of undefined (reading 'kind')
-```
-
-表现是**整个回合在第一个 step 之前就失败**，会话日志里只有 `turn/start` → `turn/end(error)`，
-连 `step/start` 都没有，极难定位。所以无论裁剪成功、失败还是跳过，都必须 `return next()`。
-`verify-history-window.mjs` 第 9 组用例复刻了这个 waterfall 语义，并保留了一个「老写法必崩」的反例。
-
-#### ⚠️ 裁剪写的事件必须是宿主认得的形状（这条踩了三次）
-
-宿主的会话格式校验（`dsh-session-format-v3-to-v4`）对消息事件有硬性要求，**缺一项就抛错、整个回合失败**：
-
-| 事件类型 | 要求 | 踩过的错 |
-| --- | --- | --- |
-| `developer/message` | `turn`/`step` 正整数 + `message.id` + `message.role='developer'` + `message.content` 数组 + `message.source`（producer-owned，且 ≠ `'plugin'`） | `developer/message turn must be positive`<br>`format v4 developer message requires id, role, content, and a producer-owned source` |
-| `user/message` | `role !== 'developer'`、`content` 是数组、`source.kind` 非空且 ≠ `'plugin'` | `message requires a producer-owned source kind` |
-
-所以本插件**改用 `user/message`**（形状照 compaction 的 checkpoint 抄 —— 那是宿主自己在跑、
-必然通过校验的路径），并带上：
-
-```js
-{ id: randomUUID(), role: 'user', content: [...], source: { kind: 'history-window' } }
-```
-
-`source.kind = 'history-window'` 有两个用处：满足宿主的 producer-owned 要求，以及让
-`isUserNode()` 能把自己的提示条和**真实用户开口**区分开。后者很重要 —— 宿主的运行时上下文
-（`source.kind = 'runtime-context'`）同样是 `user/message`，此前会把轮数算多、导致过早裁剪。
-第 10 组用例同时验证「提示条合法」「提示条不计轮」「运行时上下文不计轮」「重复裁剪不会越积越多」。
 
 ### 为什么用「提示变量」而不是 section（重要）
 
@@ -195,7 +148,7 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 | 部分 | 说明 |
 | --- | --- |
 | 记忆 | `whale-memory`（本插件），`file` / `variableName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
-| 历史窗口 | `whale-history-window`（本插件），`enable: true` / `keepTurns: 20` —— **真的裁掉 20 轮以前的历史** |
+| 压缩 | 不在本插件里：由 `billion-context` 负责（本插件不挂 history-window，见上文「为什么不用」） |
 | 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |

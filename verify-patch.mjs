@@ -149,7 +149,7 @@ for (const want of EXPECTED) {
   }
 
   // 人设必须写清新的填写规则：四区结构 + 每轮都记 + 80 条滚动 + 固定记忆不占名额
-  //                                    + 每轮先看（本预设记忆 + 最近 20 轮上下文）
+  //                                    + 每轮先看（本预设记忆 + 当前会话上下文）
   for (const [label, needle] of [
     ['分区：固定记忆', '# 固定记忆'],
     ['分区：滚动摘要', '# 滚动摘要'],
@@ -164,7 +164,7 @@ for (const want of EXPECTED) {
     ['长对话精简概括', '先精简概括再记'],
     ['R 编号格式', 'R0001'],
     ['每轮先看·本预设记忆', '本预设自己的记忆文件'],
-    ['每轮先看·最近 20 轮', '当前会话最近 20 轮'],
+    ['每轮先看·当前会话上下文', '当前会话的上下文'],
   ]) {
     if (!prefix.includes(needle)) fail(`人设缺少规则「${label}」`);
   }
@@ -179,14 +179,15 @@ for (const want of EXPECTED) {
   // 预设作用域里拿不到宿主的 compaction 服务：inject 是静态声明，
   // 服务不可达时插件会永远 waiting，把会话 resume 一起拖挂。
   // 已验证三种 inject 写法都失败，故整行移除；
-  // 「最近 20 轮」改由人设的提示层约束表达（不省 token，但约束行为）。
+  // 「对话变长后怎么办」改由人设的提示层表达：压缩插件负责压，人设负责
+  // 认摘要 + 需要原文时自己去翻（search_context / decompress / 解压旧日志）。
   const win = cfg.plugins.find((p) => p.id === 'whale-history-window');
   if (win) {
     fail('不应再挂 whale-history-window（预设作用域取不到 compaction，会拖挂 resume）');
   }
 
   // 提示层约束必须保留
-  const layerRules = ['不被动', '可以主动去找', '默认当它不存在'];
+  const layerRules = ['压缩插件', '摘要也是依据', '需要细节就自己去翻'];
   for (const rule of layerRules) {
     if (!prefix.includes(rule)) fail(`人设缺少提示层约束：${rule}`);
   }
