@@ -28,8 +28,8 @@ const local = unique.filter((n) => n.startsWith('dsh-whale-loli'));
 const builtin = unique.filter((n) => n.startsWith('@deepseek-ai/') || n.startsWith('cordis:'));
 console.log('   本地入口:', local.join(', '));
 console.log('   内置包  :', builtin.length, '个');
-check('本地入口含 history-window', local.includes('dsh-whale-loli/history-window'));
-check('本地入口含记忆插件', local.includes('dsh-whale-loli'));
+check('本地入口只含记忆插件', local.length === 1 && local[0] === 'dsh-whale-loli', `实际 [${local.join(',')}]`);
+check('本地入口已不含 history-window（改用纯提示层）', !local.includes('dsh-whale-loli/history-window'));
 
 // 本地入口必须真的能 import
 for (const spec of local) {
@@ -77,11 +77,13 @@ for (const p of idx.PRESETS) {
   check(`${p.id} 引用的变量都已声明`, used.every((u) => declared.includes(u)), `引用=[${used}] 声明=[${declared}]`);
 }
 
-console.log('\n=== 5. 历史窗口真的挂在每个预设里 ===');
-const winRows = [...patch.matchAll(/name: 'dsh-whale-loli\/history-window'\n\s+config:\n\s+enable: (\w+)\n\s+keepTurns: (\d+)/g)];
-check('history-window 行 = 3', winRows.length === 3, `实际 ${winRows.length}`);
-check('全部 enable=true', winRows.every((m) => m[1] === 'true'));
-check('全部 keepTurns=20', winRows.every((m) => Number(m[2]) === 20));
+console.log('\n=== 5. 历史裁剪不得挂载（改用纯提示层）===');
+const winRows = [...patch.matchAll(/^\s+-\s+id:\s*whale-history-window\b/gm)];
+check('history-window 插件行 = 0', winRows.length === 0, `实际 ${winRows.length}`);
+check('没有任何行引用 dsh-whale-loli/history-window', !/name:\s*'dsh-whale-loli\/history-window'/.test(patch));
+for (const rule of ['不被动', '可以主动去找', '默认当它不存在']) {
+  check(`人设含提示层约束「${rule}」`, patch.includes(rule));
+}
 
 console.log('\nRESULT:', ok ? 'PASS —— 插件可加载、配置自洽、记忆与裁剪都会生效' : 'FAIL');
 process.exit(ok ? 0 : 1);
