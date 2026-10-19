@@ -40,6 +40,33 @@
 即：每轮开口前必须看 ①**本预设自己的记忆文件**；②**当前会话最近 20 轮**上下文。
 **只看自己这一份**——绝不读、不写其他预设的记忆文件。
 
+### 20 轮是真的裁，不是嘴上说说
+
+**这一点很重要**：只在人设里写「看最近 20 轮」是**空话**——宿主不会因为那句话就不发旧消息。
+实测本机最长会话 33 轮 / 85 条 user 消息 / 1565 条 tool 结果，全部发给模型；
+宿主自带的 compaction 只在 token 压力超阈值时才压，粒度是「保留一段 token 尾巴」，**不是轮数**。
+
+所以插件附带 `history-window` 行，用宿主自己的表层替换机制做**纯删除**：
+
+```js
+session.append('developer/message', 提示条, {
+  surfaceOp: { op: 'replace', startSeq, endSeq },
+})
+```
+
+被覆盖的表层节点从 `deriveMessages()` 消失——模型真的收不到；会话日志仍保留（可回溯）。
+**不调 LLM、不花 token、不生成摘要。**
+
+三条安全线：
+
+| 线 | 做法 |
+| --- | --- |
+| 工具配对不切断 | 切点必须落在「没有未回应 tool-call」处，复用与 compaction 同款的平衡判定 |
+| 系统提示不裁 | 裁剪起点是第一个 `user/message`，**绝不是**表层第 0 个节点 |
+| 默认关闭 | 必须 `enable: true` 才裁（本插件预设已开启，`keepTurns: 20`） |
+
+挂载点为 `agent/pre-step`：循环在**派生历史之前**运行它，是唯一既在请求前、又拿得到本 agent 的时机。
+
 ### 为什么用「提示变量」而不是 section（重要）
 
 `@deepseek-ai/dsh-system-prompt` 的 `assemble()` 末尾有这样一段：
@@ -102,6 +129,7 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 | 部分 | 说明 |
 | --- | --- |
 | 记忆 | `whale-memory`（本插件），`file` / `variableName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
+| 历史窗口 | `whale-history-window`（本插件），`enable: true` / `keepTurns: 20` —— **真的裁掉 20 轮以前的历史** |
 | 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |
@@ -139,7 +167,8 @@ dsh-whale-loli/
 ├── cordis.patch.yml            # 三个预设的声明本体（由 build-patch.mjs 生成）
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
-│   ├── memory.js               # whale-memory 记忆行实现（参数化记忆文件）
+│   ├── memory.js               # whale-memory 记忆变量（四区格式 + 80 条滚动 + 归档）
+│   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）
 │   └── persona-v3-naughty.md   # 涩涩版人设（唯一源）
@@ -150,9 +179,11 @@ dsh-whale-loli/
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
 ├── lib/github.mjs              # GitHub REST 封装（token 读取）
 ├── smoke-memory.mjs            # 记忆变量冒烟测试
+├── verify-runs.mjs             # 插件真的能加载、配置自洽、变量能插值
 ├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与三预设隔离
 ├── verify-real-loader.mjs      # 用 DSH 自己的加载器校验 patch
 ├── verify-composition.mjs      # 校验 bundle+profile 合成后不重复注册
+├── verify-history-window.mjs   # 实测真的只留最近 N 轮、不切断工具配对
 ├── verify-memory-injection.mjs # 证明变量通道有效、section 通道被丢弃
 ├── verify-memory-isolation.mjs # 实测三个记忆文件不串
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
@@ -173,6 +204,8 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 node verify-patch.mjs cordis.patch.yml     # patch 结构 + 三预设记忆隔离
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
+node verify-runs.mjs                       # 插件真能加载 + 变量真能插值
+node verify-history-window.mjs             # 真的裁到最近 N 轮（不切断工具配对）
 node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
 node verify-memory-isolation.mjs           # 记忆文件端到端隔离（三个预设）
 node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档

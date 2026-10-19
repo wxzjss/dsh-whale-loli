@@ -175,6 +175,17 @@ for (const want of EXPECTED) {
   }
   if (prefix.includes('{{whale_memory') === false) fail('人设里没有任何记忆变量引用');
 
+  // 历史窗口：必须真的挂上并按轮裁剪（不是靠人设文字）
+  const win = cfg.plugins.find((p) => p.id === 'whale-history-window');
+  console.log('  history window=', win ? `${win.name} enable=${win.config.enable} keepTurns=${win.config.keepTurns}` : 'MISSING');
+  if (!win) {
+    fail('缺少 whale-history-window 行（20 轮裁剪不会生效）');
+  } else {
+    if (win.name !== 'dsh-whale-loli/history-window') fail('历史窗口 name 应为 dsh-whale-loli/history-window');
+    if (win.config.enable !== true) fail('历史窗口 enable 应为 true');
+    if (win.config.keepTurns !== 20) fail(`keepTurns 应为 20，实为 ${win.config.keepTurns}`);
+  }
+
   // 工具行
   for (const id of ['tool-fs', 'tool-fs-search', 'persistent-shell', 'agent-instructions']) {
     if (!cfg.plugins.some((p) => p.id === id)) fail(`缺少工具行 ${id}`);

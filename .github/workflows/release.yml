@@ -58,6 +58,8 @@ jobs:
           node verify-patch.mjs cordis.patch.yml
           node verify-real-loader.mjs cordis.patch.yml
           node verify-composition.mjs
+          node verify-runs.mjs
+          node verify-history-window.mjs
           node verify-memory-injection.mjs
           node verify-memory-isolation.mjs
           node verify-memory-rolling.mjs
@@ -91,6 +93,14 @@ jobs:
           echo "$inject"
           echo "$inject" | grep -q "RESULT: PASS"
           echo "$inject" | grep -q "变量通道成立"
+          # 插件真的能加载、配置自洽（防止导出名对不上这类整包加载失败）
+          runs="$(node verify-runs.mjs 2>&1)"
+          echo "$runs"
+          echo "$runs" | grep -q "RESULT: PASS"
+          # 历史窗口真的按轮裁剪（不是靠人设文字）
+          hw="$(node verify-history-window.mjs 2>&1)"
+          echo "$hw"
+          echo "$hw" | grep -q "RESULT: PASS"
 
       # tag 版本号必须与 package.json 一致，避免发出错版本
       - name: Check tag matches package.json version

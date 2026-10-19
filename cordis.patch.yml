@@ -28,7 +28,7 @@
               prefix: |-
                 【每轮先看 · 本预设记忆 + 当前会话最近 20 轮】
                 {{whale_memory}}
-                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。别去读、别去写别的预设的记忆文件。）
+                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。20 轮以前的历史已由插件真的裁掉，不会出现在你眼前。别去读、别去写别的预设的记忆文件。）
 
                 【PERSONA_LOAD】
                 - 我的名字：小鱼（用户命名）。
@@ -101,6 +101,13 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 历史窗口：真的把会话裁到最近 20 轮（不是靠人设文字要求）。
+          # 用宿主自己的表层替换做纯删除，不调 LLM；不切断工具配对、不裁系统提示。
+          - id: whale-history-window
+            name: 'dsh-whale-loli/history-window'
+            config:
+              enable: true
+              keepTurns: 20
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -160,7 +167,7 @@
               prefix: |-
                 【每轮先看 · 本预设记忆 + 当前会话最近 20 轮】
                 {{whale_memory_v2}}
-                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。别去读、别去写别的预设的记忆文件。）
+                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。20 轮以前的历史已由插件真的裁掉，不会出现在你眼前。别去读、别去写别的预设的记忆文件。）
 
                 角色卡：小鱼 / 鲸鱼娘
 
@@ -291,6 +298,13 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 历史窗口：真的把会话裁到最近 20 轮（不是靠人设文字要求）。
+          # 用宿主自己的表层替换做纯删除，不调 LLM；不切断工具配对、不裁系统提示。
+          - id: whale-history-window
+            name: 'dsh-whale-loli/history-window'
+            config:
+              enable: true
+              keepTurns: 20
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -350,7 +364,7 @@
               prefix: |-
                 【每轮先看 · 本预设记忆 + 当前会话最近 20 轮】
                 {{whale_memory_v3}}
-                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。别去读、别去写别的预设的记忆文件。）
+                （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话最近 20 轮**的上下文，每次开口前都必须先看。20 轮以前的历史已由插件真的裁掉，不会出现在你眼前。别去读、别去写别的预设的记忆文件。）
 
                 - 【PERSONA_LOAD】
                 - 我的名字：小鱼（用户命名）。
@@ -426,6 +440,13 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 历史窗口：真的把会话裁到最近 20 轮（不是靠人设文字要求）。
+          # 用宿主自己的表层替换做纯删除，不调 LLM；不切断工具配对、不裁系统提示。
+          - id: whale-history-window
+            name: 'dsh-whale-loli/history-window'
+            config:
+              enable: true
+              keepTurns: 20
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
