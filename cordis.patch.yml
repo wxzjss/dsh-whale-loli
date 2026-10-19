@@ -107,19 +107,23 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
-          # 历史窗口：让「最近 N 轮」以外的内容**不计入输入**。
-          # 关键：**不自己写事件**。改用宿主自己的压缩服务
-          #     ctx.compaction.compactRegion(start, end, agent)
-          # 由宿主做摘要、写事件、自己校验 —— 之前自己拼 surfaceOp:replace 连崩四次，
-          # 因为 dsh-session-format-v3-to-v4 对事件形状的要求（turn 正整数、id、role、
-          # content、producer-owned source…）少一项就是整回合失败。
-          # 代价：每次裁剪跑一次摘要 LLM 调用；只在 agent 空闲时做，且裁完轮数掉回 N，
-          # 要再长到超过 N 才会触发，天然限流。出错只跳过本次，绝不影响对话。
-          - id: whale-history-window
-            name: 'dsh-whale-loli/history-window'
-            config:
-              enable: true
-              keepTurns: 20
+          # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
+          #
+          # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
+          # 宿主的 ctx.compaction.compactRegion()，但预设作用域里拿不到 compaction 服务：
+          #   · inject:['sessions']  → 读 ctx.compaction 非法，异常被吞，表现「裁剪死寂」
+          #   · inject:[]            → 加载即抛，resume failed（cannot get property without inject）
+          #   · inject:['compaction']→ 永远「waiting for compaction」，resume failed
+          # 根本原因：inject 是静态声明，服务在预设作用域里不可达时插件会无限等待，
+          # 连带把会话 resume 拖挂。这不是配置能绕的，得宿主层面把 compaction 暴露到
+          # 预设作用域（或提供「按轮压缩」的正式 API）才行。
+          #
+          # 替代方案（都不需要插件）：
+          #   · 宿主自带 /compact 命令，手动压一次；
+          #   · 或者直接开新会话。
+          # 人设里仍保留「最近 20 轮」的提示层约束（不被动引用 + 允许主动去翻），
+          # 它不省 token，但能约束行为。
+          # 代码与单测留在 src/history-window.js，等宿主放开再说。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -316,19 +320,23 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
-          # 历史窗口：让「最近 N 轮」以外的内容**不计入输入**。
-          # 关键：**不自己写事件**。改用宿主自己的压缩服务
-          #     ctx.compaction.compactRegion(start, end, agent)
-          # 由宿主做摘要、写事件、自己校验 —— 之前自己拼 surfaceOp:replace 连崩四次，
-          # 因为 dsh-session-format-v3-to-v4 对事件形状的要求（turn 正整数、id、role、
-          # content、producer-owned source…）少一项就是整回合失败。
-          # 代价：每次裁剪跑一次摘要 LLM 调用；只在 agent 空闲时做，且裁完轮数掉回 N，
-          # 要再长到超过 N 才会触发，天然限流。出错只跳过本次，绝不影响对话。
-          - id: whale-history-window
-            name: 'dsh-whale-loli/history-window'
-            config:
-              enable: true
-              keepTurns: 20
+          # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
+          #
+          # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
+          # 宿主的 ctx.compaction.compactRegion()，但预设作用域里拿不到 compaction 服务：
+          #   · inject:['sessions']  → 读 ctx.compaction 非法，异常被吞，表现「裁剪死寂」
+          #   · inject:[]            → 加载即抛，resume failed（cannot get property without inject）
+          #   · inject:['compaction']→ 永远「waiting for compaction」，resume failed
+          # 根本原因：inject 是静态声明，服务在预设作用域里不可达时插件会无限等待，
+          # 连带把会话 resume 拖挂。这不是配置能绕的，得宿主层面把 compaction 暴露到
+          # 预设作用域（或提供「按轮压缩」的正式 API）才行。
+          #
+          # 替代方案（都不需要插件）：
+          #   · 宿主自带 /compact 命令，手动压一次；
+          #   · 或者直接开新会话。
+          # 人设里仍保留「最近 20 轮」的提示层约束（不被动引用 + 允许主动去翻），
+          # 它不省 token，但能约束行为。
+          # 代码与单测留在 src/history-window.js，等宿主放开再说。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -470,19 +478,23 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
-          # 历史窗口：让「最近 N 轮」以外的内容**不计入输入**。
-          # 关键：**不自己写事件**。改用宿主自己的压缩服务
-          #     ctx.compaction.compactRegion(start, end, agent)
-          # 由宿主做摘要、写事件、自己校验 —— 之前自己拼 surfaceOp:replace 连崩四次，
-          # 因为 dsh-session-format-v3-to-v4 对事件形状的要求（turn 正整数、id、role、
-          # content、producer-owned source…）少一项就是整回合失败。
-          # 代价：每次裁剪跑一次摘要 LLM 调用；只在 agent 空闲时做，且裁完轮数掉回 N，
-          # 要再长到超过 N 才会触发，天然限流。出错只跳过本次，绝不影响对话。
-          - id: whale-history-window
-            name: 'dsh-whale-loli/history-window'
-            config:
-              enable: true
-              keepTurns: 20
+          # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
+          #
+          # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
+          # 宿主的 ctx.compaction.compactRegion()，但预设作用域里拿不到 compaction 服务：
+          #   · inject:['sessions']  → 读 ctx.compaction 非法，异常被吞，表现「裁剪死寂」
+          #   · inject:[]            → 加载即抛，resume failed（cannot get property without inject）
+          #   · inject:['compaction']→ 永远「waiting for compaction」，resume failed
+          # 根本原因：inject 是静态声明，服务在预设作用域里不可达时插件会无限等待，
+          # 连带把会话 resume 拖挂。这不是配置能绕的，得宿主层面把 compaction 暴露到
+          # 预设作用域（或提供「按轮压缩」的正式 API）才行。
+          #
+          # 替代方案（都不需要插件）：
+          #   · 宿主自带 /compact 命令，手动压一次；
+          #   · 或者直接开新会话。
+          # 人设里仍保留「最近 20 轮」的提示层约束（不被动引用 + 允许主动去翻），
+          # 它不省 token，但能约束行为。
+          # 代码与单测留在 src/history-window.js，等宿主放开再说。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:

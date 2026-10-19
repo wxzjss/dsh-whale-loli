@@ -31,7 +31,7 @@ const personaV2 = readFileSync(root + 'src/persona-v2-live.md', 'utf8');
 const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
 
 /** 三个预设共用的工具面行（含参数化记忆行）。 */
-function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail, keepTurns }) {
+function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail }) {
   return `          # 长期记忆：注册成提示变量，由人设开头的 {{${memoryVariable}}} 引用。
           # persona 是 complete:true，宿主会把独立 section 丢掉（见 src/memory.js 顶部注释），
           # 所以记忆必须走 variable 通道；variableName 也要每预设不同，否则同 scope 注册冲突。
@@ -43,19 +43,23 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
               maxChars: ${memoryMax}
               turnLimit: ${memoryTurns}
               detailLimit: ${memoryDetail}
-          # 历史窗口：让「最近 N 轮」以外的内容**不计入输入**。
-          # 关键：**不自己写事件**。改用宿主自己的压缩服务
-          #     ctx.compaction.compactRegion(start, end, agent)
-          # 由宿主做摘要、写事件、自己校验 —— 之前自己拼 surfaceOp:replace 连崩四次，
-          # 因为 dsh-session-format-v3-to-v4 对事件形状的要求（turn 正整数、id、role、
-          # content、producer-owned source…）少一项就是整回合失败。
-          # 代价：每次裁剪跑一次摘要 LLM 调用；只在 agent 空闲时做，且裁完轮数掉回 N，
-          # 要再长到超过 N 才会触发，天然限流。出错只跳过本次，绝不影响对话。
-          - id: whale-history-window
-            name: 'dsh-whale-loli/history-window'
-            config:
-              enable: true
-              keepTurns: ${keepTurns}
+          # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
+          #
+          # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
+          # 宿主的 ctx.compaction.compactRegion()，但预设作用域里拿不到 compaction 服务：
+          #   · inject:['sessions']  → 读 ctx.compaction 非法，异常被吞，表现「裁剪死寂」
+          #   · inject:[]            → 加载即抛，resume failed（cannot get property without inject）
+          #   · inject:['compaction']→ 永远「waiting for compaction」，resume failed
+          # 根本原因：inject 是静态声明，服务在预设作用域里不可达时插件会无限等待，
+          # 连带把会话 resume 拖挂。这不是配置能绕的，得宿主层面把 compaction 暴露到
+          # 预设作用域（或提供「按轮压缩」的正式 API）才行。
+          #
+          # 替代方案（都不需要插件）：
+          #   · 宿主自带 /compact 命令，手动压一次；
+          #   · 或者直接开新会话。
+          # 人设里仍保留「最近 20 轮」的提示层约束（不被动引用 + 允许主动去翻），
+          # 它不省 token，但能约束行为。
+          # 代码与单测留在 src/history-window.js，等宿主放开再说。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -132,7 +136,7 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（三个�
 ${block(persona)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, keepTurns: 20 })}
+${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设二：鲸鱼娘活人版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘活人版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -150,7 +154,7 @@ ${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memory
 ${block(personaV2)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, keepTurns: 20 })}
+${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设三：鲸鱼娘涩涩版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘涩涩版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -168,7 +172,7 @@ ${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_
 ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, keepTurns: 20 })}
+${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');
