@@ -26,10 +26,20 @@ function makeSession(spec) {
   };
 
   // 系统提示（表层第 0 个节点）
-  push('system/message', { message: { role: 'system', content: [] } });
+  push('system/message', { message: { role: 'system', content: [], source: { kind: 'system' } } });
 
   for (const turn of spec) {
-    push('user/message', { role: 'user', content: [{ type: 'text', text: `第${turn}轮用户话` }] });
+    // 真实用户开口：source.kind === 'user'
+    push('user/message', { role: 'user', content: [{ type: 'text', text: `第${turn}轮用户话` }], source: { kind: 'user' } });
+    // 隔一轮插一条宿主注入的运行时上下文（source.kind = 'runtime-context'）：
+    // 它也是 user/message，但**不算一轮**，用来验证计数不被它带偏。
+    if (turn % 3 === 0) {
+      push('user/message', {
+        role: 'user',
+        content: [{ type: 'text', text: `（运行时上下文 #${turn}）` }],
+        source: { kind: 'runtime-context' },
+      });
+    }
     if (turn % 2 === 0) {
       // 偶数轮带一次工具调用 + 结果
       push('assistant/message', {
@@ -56,10 +66,51 @@ function makeSession(spec) {
       return nodes.filter((n) => !hidden.has(n)).map((n) => events.get(n));
     },
     append(type, data, opts) {
-      // 复刻宿主 dsh-session-format 的校验：developer/message 的 turn 必须为正整数
-      if (type === 'developer/message' && !(Number.isInteger(data?.turn) && data.turn > 0)) {
-        violations.push(`developer/message turn must be positive (实际 turn=${data?.turn})`);
-        throw new Error('developer/message turn must be positive');
+      // ── 复刻宿主 dsh-session-format-v3-to-v4 的**完整**消息校验 ──
+      // 这些规则是一条条踩出来的，全部镜像进来，避免再出现「修一个冒一个」。
+      const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+      const validSource = (m) =>
+        isObj(m?.source) &&
+        typeof m.source.kind === 'string' &&
+        m.source.kind.length > 0 &&
+        m.source.kind !== 'plugin';
+
+      if (type === 'developer/message') {
+        // assertV4DeveloperData + assertDeveloperMessage
+        if (!isObj(data) || !isObj(data.message) || data.message.role !== 'developer') {
+          violations.push('developer/message requires turn, step, and a developer message');
+          throw new Error('developer/message requires turn, step, and a developer message');
+        }
+        for (const f of ['turn', 'step']) {
+          if (!(Number.isInteger(data[f]) && data[f] > 0)) {
+            violations.push(`developer/message ${f} must be positive`);
+            throw new Error(`developer/message ${f} must be positive`);
+          }
+        }
+        const m = data.message;
+        if (
+          typeof m.id !== 'string' ||
+          m.id.length === 0 ||
+          !Array.isArray(m.content) ||
+          !validSource(m)
+        ) {
+          violations.push('developer message requires id, role, content, and a producer-owned source');
+          throw new Error('developer message requires id, role, content, and a producer-owned source');
+        }
+      } else if (type === 'user/message') {
+        // assertOrdinaryMessage + assertV4MessageSources
+        if (isObj(data) && data.role === 'developer') {
+          violations.push('developer/message and developer role must occur together');
+          throw new Error('developer/message and developer role must occur together');
+        }
+        if (isObj(data) && data.content !== undefined && !Array.isArray(data.content)) {
+          violations.push('user/message content must be an array');
+          throw new Error('user/message content must be an array');
+        }
+        if (!validSource(data)) {
+          violations.push('message requires a producer-owned source kind');
+          throw new Error('message requires a producer-owned source kind');
+        }
       }
       const op = opts?.surfaceOp;
       if (op?.op === 'replace') {
@@ -80,11 +131,19 @@ function makeSession(spec) {
       return events.get(s);
     },
     _violations: violations,
+    /** 真正的用户轮数：排除本插件提示条与运行时上下文（与插件 isUserNode 同款判定）。 */
     _countUsers() {
-      return nodes.filter((n) => !hidden.has(n)).filter((n) => events.get(n).type === 'user/message').length;
+      return this._users().length;
     },
     _users() {
-      return nodes.filter((n) => !hidden.has(n)).filter((n) => events.get(n).type === 'user/message');
+      return nodes
+        .filter((n) => !hidden.has(n))
+        .filter((n) => {
+          const e = events.get(n);
+          if (e.type !== 'user/message') return false;
+          const kind = e.data?.source?.kind;
+          return kind !== 'history-window' && kind !== 'runtime-context';
+        });
     },
   };
 }
@@ -152,8 +211,10 @@ console.log('\n=== 6. 自定义 keepTurns ===');
   mod.pruneHistory({ session: s }, 5, { turn: 1, step: 1 });
   // 提示条走 developer/message，不占 user 名额 → 正好 5
   check('保留 5 轮（提示条不占名额）', s._countUsers() === 5, `实际 ${s._countUsers()}`);
-  const hasDev = s.surface.nodes.some((n) => s.eventAt(n).type === 'developer/message');
-  check('写入了 developer 提示条', hasDev);
+  const notice = s.surface.nodes.map((n) => s.eventAt(n)).find((e) => e.data?.source?.kind === 'history-window');
+  check('写入了提示条（source.kind = history-window）', notice !== undefined);
+  check('提示条是 user/message（宿主校验最宽松的合法形状）', notice?.type === 'user/message');
+  check('提示条带 id', typeof notice?.data?.id === 'string' && notice.data.id.length > 0);
 }
 
 console.log('\n=== 7. 插件默认关闭 ===');
@@ -226,24 +287,30 @@ console.log('\n=== 9. waterfall 必须被放行（回归：曾导致 decision.ki
   check('裁剪内部抛错时仍返回 decision', got3?.kind === 'enter');
 }
 
-console.log('\n=== 10. 拿不到合法 turn 时跳过裁剪（不许写非法事件）===');
+console.log('\n=== 10. 提示条必须合法、且不能被算成一轮 ===');
 {
-  // 宿主 dsh-session-format 要求 developer/message 的 turn 为正整数。
-  // 老代码写死 turn:0，会抛 `developer/message turn must be positive` 并拖垮整回合。
+  // 宿主 dsh-session-format-v3-to-v4 对消息事件的完整要求已镜像进 mock：
+  //   user/message     → role 不能是 developer、content 是数组、source.kind 非空且 ≠ 'plugin'
+  //   developer/message → 还要 turn/step 正整数 + message.id + message.source
+  // 之前用 developer/message 但没给 id/source，报
+  //   format v4 developer message requires id, role, content, and a producer-owned source
   const s = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
-  const before = s._countUsers();
-  for (const position of [{}, { turn: 0, step: 1 }, { turn: -3, step: 1 }, { turn: 1.5, step: 1 }, undefined]) {
-    const plan = mod.pruneHistory({ session: s }, 20, position);
-    check(`position=${JSON.stringify(position)} → 返回 null`, plan === null);
-  }
-  check('20 轮没被裁（因为 skipped）', s._countUsers() === before, `实际 ${s._countUsers()}`);
-  check('没有写任何非法 developer/message', s._violations.length === 0, s._violations.join(' | '));
+  check('初始 40 轮', s._countUsers() === 40, `实际 ${s._countUsers()}`);
+  check('初始含运行时上下文（不算轮）', s.surface.nodes.some((n) => s.eventAt(n).data?.source?.kind === 'runtime-context'));
 
-  // 传了合法 turn 就能正常裁
-  const ok2 = mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
-  check('给了合法 turn 后正常裁剪', ok2 !== null && s._countUsers() === 20, `实际 ${s._countUsers()}`);
-  check('裁剪全程无校验错误', s._violations.length === 0, s._violations.join(' | '));
+  const plan = mod.pruneHistory({ session: s }, 20);
+  check('裁剪成功', plan !== null);
+  check('裁完正好 20 轮（提示条不占名额）', s._countUsers() === 20, `实际 ${s._countUsers()}`);
+  check('全程零校验违规', s._violations.length === 0, s._violations.join(' | '));
+
+  // 再裁一次：上一次的提示条本身会被新范围吃掉，不会越积越多
+  const before = s._countUsers();
+  mod.pruneHistory({ session: s }, 20);
+  check('第二次裁剪不再变动（已是最新 20 轮）', s._countUsers() === before, `实际 ${s._countUsers()}`);
+  const notices = s.surface.nodes.map((n) => s.eventAt(n)).filter((e) => e.data?.source?.kind === 'history-window');
+  check('提示条最多一条（不会越积越多）', notices.length === 1, `实际 ${notices.length}`);
+  check('第二次也无校验违规', s._violations.length === 0, s._violations.join(' | '));
 }
 
-console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，waterfall 被放行，且 turn 合法' : 'FAIL');
+console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，waterfall 放行，提示条合法且不计轮' : 'FAIL');
 process.exit(ok ? 0 : 1);

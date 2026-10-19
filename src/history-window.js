@@ -30,6 +30,7 @@
  * `agent/pre-step`：循环在每个步骤**派生历史之前**运行它，是唯一既在请求前、
  * 又能拿到本 agent 的时机。（`turn/start` 是 session 事件而非 ctx 事件，挂不上。）
  */
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -56,9 +57,27 @@ function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
 }
 
-/** 一个「轮」的边界 = 一条 user 消息。表层里只有消息节点，turn 标记不进表层。 */
+/**
+ * 本插件写进会话的「已裁剪」提示条所用的 source.kind。
+ * 宿主只要求 message.source.kind 是非空字符串且不是 `'plugin'`，
+ * 但我们必须能把自己的提示条和「真实用户开口」区分开，否则每裁一次就多算一轮。
+ */
+export const NOTICE_SOURCE_KIND = 'history-window';
+
+/** 不算「用户开口」的 source.kind：本插件的提示条 + 宿主注入的运行时上下文。 */
+const NON_TURN_SOURCE_KINDS = new Set([NOTICE_SOURCE_KIND, 'runtime-context']);
+
+/**
+ * 一个「轮」的边界 = 一条**真实用户**发出的 user 消息。
+ *
+ * 不能只看 `type === 'user/message'`：宿主的运行时上下文（`source.kind = 'runtime-context'`）
+ * 和本插件自己的提示条也是 user/message，会把轮数算多、导致过早裁剪。
+ * 来源未知（老日志没有 source）时保守地当成用户开口。
+ */
 function isUserNode(event) {
-  return event?.type === 'user/message';
+  if (event?.type !== 'user/message') return false;
+  const kind = event.data?.source?.kind;
+  return typeof kind !== 'string' || !NON_TURN_SOURCE_KINDS.has(kind);
 }
 
 /**
@@ -138,21 +157,23 @@ export function shadowedNodes(session, startSeq, endSeq) {
 }
 
 /**
- * 执行裁剪。返回计划；无需裁剪（或拿不到合法 position）返回 null。
+ * 执行裁剪。返回计划；无需裁剪返回 null。
  *
- * `position` = `{ turn, step }`，直接来自 `agent/pre-step` 的 payload。
- * **必须传真实 turn**：宿主 `dsh-session-format-v3-to-v4` 的校验器要求
- * `developer/message` 的 `turn` 为正整数，写死 0 会抛
- *   `developer/message turn must be positive`
- * 拿不到正数 turn 就跳过这一轮（宁可不裁，也不写非法事件）。
+ * 替换消息用 **`user/message`**，形状照 compaction 的 checkpoint 抄 —— 这是宿主
+ * 已经在跑、必然通过全部校验的那条路径。相比之下 `developer/message` 的规则苛刻得多
+ * （`assertDeveloperMessage` 要求 `id` / `role` / `content` / **producer-owned `source`**，
+ * 且 `turn`、`step` 必须是正整数），少一项就抛：
+ *   format v4 developer message requires id, role, content, and a producer-owned source
+ *
+ * `user/message` 这边只有两条硬要求：
+ *   1. `assertOrdinaryMessage`：`role !== 'developer'`、`content` 是数组
+ *   2. `assertV4MessageSources`：`source.kind` 是非空字符串且不等于 `'plugin'`
+ * 所以带上 `id` 和 `source: { kind: 'history-window' }` 即可，且能被 {@link isUserNode}
+ * 识别出来、不计入轮数。
  */
-export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS, position = {}) {
+export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
   const session = agent?.session;
   if (session === undefined) return null;
-
-  const turn = Number.isInteger(position?.turn) && position.turn > 0 ? position.turn : null;
-  if (turn === null) return null;
-  const step = Number.isInteger(position?.step) && position.step > 0 ? position.step : 1;
 
   const plan = planPrune(session, keepTurns);
   if (plan === null) return null;
@@ -161,14 +182,12 @@ export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS, position = {
   if (shadowed.length === 0) return null;
 
   session.append(
-    'developer/message',
+    'user/message',
     {
-      turn,
-      step,
-      message: {
-        role: 'developer',
-        content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
-      },
+      id: randomUUID(),
+      role: 'user',
+      content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
+      source: { kind: NOTICE_SOURCE_KIND },
     },
     {
       surfaceOp: { op: 'replace', startSeq: plan.startSeq, endSeq: plan.endSeq },
@@ -209,16 +228,13 @@ export function apply(ctx, config = {}) {
 
   const keepTurns = typeof config.keepTurns === 'number' ? config.keepTurns : DEFAULT_KEEP_TURNS;
 
-  // agent/pre-step 在派生历史之前运行，且拿得到本 agent 与当前 turn/step。
+  // agent/pre-step 在派生历史之前运行，且拿得到本 agent。
   ctx.effect(
     () =>
       ctx.on('agent/pre-step', async (payload, next) => {
         try {
           const agent = payload?.agent ?? payload?.handle?.agent;
-          if (agent?.session !== undefined) {
-            // turn/step 必须原样透传给 pruneHistory：宿主校验器要求 turn 为正整数。
-            pruneHistory(agent, keepTurns, { turn: payload?.turn, step: payload?.step });
-          }
+          if (agent?.session !== undefined) pruneHistory(agent, keepTurns);
         } catch {
           // 裁剪失败绝不影响正常对话
         }

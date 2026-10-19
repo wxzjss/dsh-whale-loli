@@ -96,17 +96,26 @@ Cannot read properties of undefined (reading 'kind')
 连 `step/start` 都没有，极难定位。所以无论裁剪成功、失败还是跳过，都必须 `return next()`。
 `verify-history-window.mjs` 第 9 组用例复刻了这个 waterfall 语义，并保留了一个「老写法必崩」的反例。
 
-#### ⚠️ 裁剪写的事件必须带合法 `turn`
+#### ⚠️ 裁剪写的事件必须是宿主认得的形状（这条踩了三次）
 
-宿主的会话格式校验（`dsh-session-format-v3-to-v4`）要求 `developer/message` 的 `turn` 是**正整数**。
-写死 `turn: 0` 会抛：
+宿主的会话格式校验（`dsh-session-format-v3-to-v4`）对消息事件有硬性要求，**缺一项就抛错、整个回合失败**：
 
+| 事件类型 | 要求 | 踩过的错 |
+| --- | --- | --- |
+| `developer/message` | `turn`/`step` 正整数 + `message.id` + `message.role='developer'` + `message.content` 数组 + `message.source`（producer-owned，且 ≠ `'plugin'`） | `developer/message turn must be positive`<br>`format v4 developer message requires id, role, content, and a producer-owned source` |
+| `user/message` | `role !== 'developer'`、`content` 是数组、`source.kind` 非空且 ≠ `'plugin'` | `message requires a producer-owned source kind` |
+
+所以本插件**改用 `user/message`**（形状照 compaction 的 checkpoint 抄 —— 那是宿主自己在跑、
+必然通过校验的路径），并带上：
+
+```js
+{ id: randomUUID(), role: 'user', content: [...], source: { kind: 'history-window' } }
 ```
-developer/message turn must be positive
-```
 
-所以 `pruneHistory()` 从 `agent/pre-step` 的 payload 里取真实的 `turn` / `step` 透传；
-**拿不到正数 turn 就跳过本次裁剪**（宁可不裁，也不写非法事件）。第 10 组用例覆盖这个分支。
+`source.kind = 'history-window'` 有两个用处：满足宿主的 producer-owned 要求，以及让
+`isUserNode()` 能把自己的提示条和**真实用户开口**区分开。后者很重要 —— 宿主的运行时上下文
+（`source.kind = 'runtime-context'`）同样是 `user/message`，此前会把轮数算多、导致过早裁剪。
+第 10 组用例同时验证「提示条合法」「提示条不计轮」「运行时上下文不计轮」「重复裁剪不会越积越多」。
 
 ### 为什么用「提示变量」而不是 section（重要）
 
