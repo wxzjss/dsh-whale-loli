@@ -13,21 +13,48 @@
 
 ## 记忆功能
 
-小鱼的记忆本分**两个区**，写法和保留期完全不同：
+小鱼的记忆本分**四个区**，各管各的：
 
 | 区 | 内容 | 保留期 |
 | --- | --- | --- |
-| `## 重要记忆` | 长期事实与约定（主人的偏好、忌讳、重要约定、正在做的事、答应过的事……） | **永久保留**，不被轮数挤掉 |
-| `## 对话记录` | **每一轮**对话都记一条 | 滚动窗口，**只留最近 80 轮**，超了从最旧滚出 |
+| `# 固定记忆` | 8 个固定小节：任务目标 / 用户约束·偏好 / 当前状态 / 待办 / 关键决策 / 关键事实（已验证）/ 文件·路径·命令 / 错误与修复 | **永久保留**，不自动删除，定期合并去重 |
+| `# 滚动摘要` | **每一轮**对话记一条，格式 `- R0001 [时间] 摘要：...` | 滚动窗口，**最多 80 条**，超了从最旧滚出 |
+| `# 最近详细区` | 最近 3~5 轮写得更详细，或直接放原文 | 只留最近 `detailLimit`（默认 5）条 |
+| `# 归档索引` | 滚出去的条目归档到 `archive/<预设名>/YYYY-MM-DD.md`，这里记一行索引 | — |
 
-- **每轮都记**：不是挑着记。短对话直接记一条；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
-- **80 轮上限只算「对话记录」**：`## 重要记忆` 不占这个名额。系统提示里 `## 对话记录（N/80 轮）` 就是当前用量。
-- **想长期留的就往上挪**：某条对话以后还用得上，就总结一句写进 `## 重要记忆`；否则到点会被滚出去。
-- 上限有两道保险：注入时只取最近 80 轮（文件里堆再多也只进 80 轮）；`pruneMemoryFile()` 可以把文件本身裁到 80 轮。
-- 总长顶到 `maxChars`（16000）时，**先丢最旧的对话轮次**，重要记忆最后才动。
+- **每轮都记**：不是挑着记。短对话直接记；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
+- **80 条上限只算「滚动摘要」**：`# 固定记忆` 不占这个名额。
+- **想长期留的就往上挪**：某条滚动摘要以后还用得上，就总结一句写进 `# 固定记忆`；否则到点会滚出去（并归档）。
+- 上限有两道保险：注入时只取最近 80 条（文件里堆再多也只进 80 条）；`appendRolling()` / `pruneMemoryFile()` 可把文件本身裁到 80 条并自动归档。
+- 总长顶到 `maxChars`（16000）时，**先丢最旧的滚动摘要，再丢详细区**，固定记忆最后才动。
 
-每次新对话开始，记忆文件会**自动作为提示段注入**——不是等模型想起来去读，
-而是在系统提示组装时就带上，所以小鱼开口前就已经「看过」了。
+### 每轮先看什么
+
+人设开头就是这一段，随人设一起进系统提示：
+
+```
+【每轮先看 · 本预设记忆 + 当前会话最近 20 轮】
+{{whale_memory}}
+```
+
+即：每轮开口前必须看 ①**本预设自己的记忆文件**；②**当前会话最近 20 轮**上下文。
+**只看自己这一份**——绝不读、不写其他预设的记忆文件。
+
+### 为什么用「提示变量」而不是 section（重要）
+
+`@deepseek-ai/dsh-system-prompt` 的 `assemble()` 末尾有这样一段：
+
+```js
+sections: completeSection === void 0 ? transformed.sections : [completeSection]
+```
+
+意思是：**只要组合里存在一个 `complete: true` 的 section，最终提示就只剩它一个**，其余 section 全被丢弃。
+本插件三个预设的 persona 都沿用官方 minimal 的写法 `complete: true`（用来剥掉 harness 身份、工具说明等），
+所以「另注册一个 section 放记忆」**从来不会生效** —— 实测本机 34 条真实系统提示里，记忆段出现 **0 次**。
+
+正确入口是 **prompt variable**：complete section 本身仍会被插值，把记忆注册成变量、
+再让人设 prefix 引用它，记忆才会真正进入模型看到的提示。
+`verify-memory-injection.mjs` 复刻了宿主这段逻辑，同时验证「变量通道成立」和「section 通道确实是死路」。
 
 ### 隔离是怎么做的
 
@@ -36,10 +63,10 @@
 | 层 | 预设一 | 预设二 | 预设三 |
 | --- | --- | --- | --- |
 | 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` | `whale-loli-v3-naughty.md` |
-| 提示段名 (`config.sectionName`) | `whale-loli-memory` | `whale-loli-v2-live-memory` | `whale-loli-v3-naughty-memory` |
+| 提示变量名 (`config.variableName`) | `whale_memory` | `whale_memory_v2` | `whale_memory_v3` |
 | 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` | `鲸鱼娘涩涩版Agent预设` |
 
-`sectionName` 必须不同：否则同一个 scope 内注册两个同名 section 会冲突。
+变量名必须不同：否则同一个 scope 内注册同名变量会冲突。
 `verify-memory-isolation.mjs` 会实测「改 A 不影响 B/C、删 C 不影响 A/B」。
 
 ### 记忆文件
@@ -50,10 +77,11 @@
 C:\Users\<你>\.dsh\whale-loli.md
 C:\Users\<你>\.dsh\whale-loli-v2-live.md
 C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
+C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 ```
 
-文件不存在不会报错（该提示段自动留空）。主人可以直接编辑这三个文件。
-一级标题和 `>` 引用行在注入时会被剥掉；没写内容的 `###` 空小标题也会被丢掉，
+文件不存在不会报错（该变量自动留空）。主人可以直接编辑这三个文件。
+文件标题和 `>` 引用行在注入时会被剥掉；没写内容的空小标题也会被丢掉，
 所以文件里只有骨架时不会白占上下文。
 
 ## 它做了什么
@@ -65,16 +93,16 @@ C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
    `@deepseek-ai/dsh-agent-preset` 会把它交给 `ctx.agentPresets.register()` 注册。
    这也是 DSH 官方四个内置预设（standard / ptc / minimal / cordis）用的同一套机制。
 2. **记忆行** —— 每个预设里一条 `whale-memory` 行（`name: dsh-whale-loli`），
-   由本包 `src/memory.js` 实现，用 `ctx.systemPrompt.section()` 注册一个
-   `text` 是**函数**的提示段，每次组装系统提示时实时读盘——改完文件下一个模型步
-   就生效，不用重载宿主。
+   由本包 `src/memory.js` 实现，用 `ctx.systemPrompt.variable()` 注册一个
+   返回**字符串**的 provider，每次组装系统提示时实时读盘——改完文件下一个模型步
+   就生效，不用重载宿主。用变量而不是 section 的原因见上文「为什么用提示变量」。
 
 ## 预设内容
 
 | 部分 | 说明 |
 | --- | --- |
-| 记忆 | `whale-memory`（本插件），`file` / `sectionName` / `maxChars: 16000` / `turnLimit: 80` |
-| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`，`complete: true`，`includeRuntimeContext: false` |
+| 记忆 | `whale-memory`（本插件），`file` / `variableName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
+| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |
 | Shell | `cordis:group` + `isolate.terminals: true`，Windows 下 pwsh、非 Windows 下 bash，`timeoutMs: 300000` |
@@ -121,12 +149,13 @@ dsh-whale-loli/
 ├── publish.mjs                 # npm 发布 + 打 tag
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
 ├── lib/github.mjs              # GitHub REST 封装（token 读取）
-├── smoke-memory.mjs            # 记忆行冒烟测试
+├── smoke-memory.mjs            # 记忆变量冒烟测试
 ├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与三预设隔离
 ├── verify-real-loader.mjs      # 用 DSH 自己的加载器校验 patch
 ├── verify-composition.mjs      # 校验 bundle+profile 合成后不重复注册
+├── verify-memory-injection.mjs # 证明变量通道有效、section 通道被丢弃
 ├── verify-memory-isolation.mjs # 实测三个记忆文件不串
-├── verify-memory-rolling.mjs   # 实测两区结构与 80 轮滚动上限
+├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -144,9 +173,10 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 node verify-patch.mjs cordis.patch.yml     # patch 结构 + 三预设记忆隔离
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
+node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
 node verify-memory-isolation.mjs           # 记忆文件端到端隔离（三个预设）
-node verify-memory-rolling.mjs             # 重要记忆永久 + 对话记录 80 轮滚动
-node smoke-memory.mjs                      # 记忆行冒烟
+node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档
+node smoke-memory.mjs                      # 记忆变量冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
 ```

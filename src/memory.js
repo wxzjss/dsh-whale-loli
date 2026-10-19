@@ -1,37 +1,55 @@
 /**
  * whale-memory —— 鲸鱼娘的「长期记忆」记忆行。
  *
- * 作用：把某个记忆文件（默认 <DSH_HOME>/whale-loli.md）作为一条 prompt section
- * 注入到系统提示里。因为走的是 `section()` 而不是 `context()`，所以即使预设
- * 关掉了运行时上下文（includeRuntimeContext: false）也照样生效。
+ * ── 为什么是变量，而不是独立 section ──────────────────────────────────
  *
- * text 传的是函数而不是字符串：`system-prompt` 会在**每次组装系统提示时**调用它
- * （lib/index.js 的 `typeof section.text === "function" ? section.text(context)`），
- * 所以文件被改后下一个模型步就生效，不用重载宿主。
+ * `@deepseek-ai/dsh-system-prompt` 的 assemble() 末尾有这么一段（lib/index.js:401）：
  *
- * ── 记忆文件分成两个区 ────────────────────────────────────────────────
+ *     return { ...transformed,
+ *              sections: completeSection === void 0 ? transformed.sections : [completeSection] }
  *
- *   ## 重要记忆   永久保留。不管轮数多少、时间多久都不会被挤掉
- *                （只有总长度顶到 maxChars 兜底时才会截断）。
- *   ## 对话记录   滚动流水。每轮对话一条，只保留最近 turnLimit 轮，
- *                超出的从最旧的开始滚出去。
+ * 意思是：**只要组合里存在一个 `complete: true` 的 section，最终提示就只剩它一个**，
+ * 其余 section 全被丢掉。本包三个预设的 persona 都是 `complete: true`（照官方 minimal
+ * 的写法，用来把 harness 身份、工具说明等统统剥掉），所以早先那种「另注册一个
+ * section 放记忆」的做法**从来没生效过**：实测本机 34 条真实系统提示里，记忆段出现 0 次。
  *
- * 两道保险确保「80 轮上限」真的成立：
- *   1. 注入时按 turnLimit 只取最近 N 轮 —— 即使文件里堆了 500 轮，
- *      进到上下文里的也只有 80 轮。
- *   2. pruneMemoryFile() 可以把文件本身裁到 N 轮（写盘由调用方决定，
- *      不在组装热路径里偷偷写）。
- * 长度超 maxChars 时，先丢最旧的对话轮次，重要记忆最后才动。
+ * 正确入口是 **prompt variable**：complete section 本身仍会被插值
+ * （renderPrompt 对 `interpolate !== false` 的 section 调 interpolate），
+ * 于是把记忆注册成变量 `{{whale_memory}}`、再让人设 prefix 引用它，
+ * 记忆就会随人设一起进入最终提示。
  *
- * 多预设隔离：同一个包会被挂载多次（每个预设一次）。每次挂载用不同的
- * `file`（记忆文件名）与 `sectionName`（提示段名）区分，两者都从 config 传入，
- * 因此「鲸鱼娘Agent预设」「活人版」「涩涩版」各记各的、绝不串。
+ * 本模块因此：
+ *   1. 注册一个 variable（默认 `whale_memory`），provider 每次组装时实时读盘；
+ *   2. 默认**不再**注册独立 section（在 complete 预设里那是死代码）；
+ *      传 `emitSection: true`（给非 complete 预设用）才额外注册。
  *
- * 另外导出工具函数，供构建脚本与自检复用。
+ * ── 记忆文件格式（区标题单独一行，内容写在标题行下面）───────────────
+ *
+ *     # 固定记忆（不自动删除，定期合并去重）
+ *     ## 任务目标
+ *     ## 用户约束/偏好
+ *     ## 当前状态
+ *     ## 待办
+ *     ## 关键决策
+ *     ## 关键事实（已验证）
+ *     ## 文件/路径/命令
+ *     ## 错误与修复
+ *     # 滚动摘要（最多80条，FIFO）
+ *     - R0001 [时间] 摘要：...
+ *     # 最近详细区（最近 3~5 轮保留更详细摘要或原文）
+ *     - R0081 ...
+ *     # 归档索引
+ *     - archive/<stem>/2026-10-19.md（10 条）
+ *
+ * 固定区永久保留；滚动区上限 turnLimit（默认 80），超出的从最旧滚出并归档到
+ * archive/<stem>/YYYY-MM-DD.md，同时在归档索引里记一笔。
+ *
+ * 多预设隔离：同一个包被挂载多次（每个预设一次），各自用不同的
+ * `variableName` / `file` 区分，所以三份记忆互不相通。变量名必须匹配 [a-z][a-z0-9_]*。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'whale-memory';
@@ -42,248 +60,321 @@ export const inject = ['systemPrompt'];
 /** 默认记忆文件名（放在 <DSH_HOME> 下）。 */
 export const DEFAULT_MEMORY_FILE = 'whale-loli.md';
 
-/** 默认 section 名。 */
+/** 默认变量名。 */
+export const DEFAULT_VARIABLE = 'whale_memory';
+
+/** 默认 section 名（仅 emitSection: true 时使用）。 */
 export const MEMORY_SECTION = 'whale-loli-memory';
 
-/** 注入上限：记忆再长也不超过这么多字符，避免拖垮上下文。 */
+/** 注入总长上限。 */
 export const MEMORY_MAX_CHARS = 16000;
 
-/** 对话记录的滚动上限（轮）。重要记忆不占这个名额。 */
+/** 滚动摘要上限（条）。固定记忆不占这个名额。 */
 export const DEFAULT_TURN_LIMIT = 80;
 
-/** 永久区标题。 */
-export const ZONE_PERMANENT = '## 重要记忆';
+/** 最近详细区保留多少轮。 */
+export const DEFAULT_DETAIL_LIMIT = 5;
 
-/** 流水区标题。 */
-export const ZONE_LOG = '## 对话记录';
+/** 固定区标题。 */
+export const ZONE_FIXED = '# 固定记忆';
 
-/** DSH 家目录：DSH_HOME 环境变量优先，否则 ~/.dsh（与 core 的 findDshHome() 一致）。 */
+/** 滚动摘要区标题。 */
+export const ZONE_ROLL = '# 滚动摘要';
+
+/** 最近详细区标题。 */
+export const ZONE_DETAIL = '# 最近详细区';
+
+/** 归档索引区标题。 */
+export const ZONE_ARCHIVE = '# 归档索引';
+
+/** 固定区的 8 个小节（顺序即写入顺序）。 */
+export const FIXED_SECTIONS = [
+  '## 任务目标',
+  '## 用户约束/偏好',
+  '## 当前状态',
+  '## 待办',
+  '## 关键决策',
+  '## 关键事实（已验证）',
+  '## 文件/路径/命令',
+  '## 错误与修复',
+];
+
+/** DSH 家目录：DSH_HOME 优先，否则 ~/.dsh。 */
 export function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
 }
 
-/**
- * 解析记忆文件路径。
- * @param file - 记忆文件名或绝对路径；默认 {@link DEFAULT_MEMORY_FILE}。
- *   相对文件名解析到 <DSH_HOME>/ 下；传绝对路径则原样使用。
- */
+/** 解析记忆文件路径（绝对路径原样，否则挂到 DSH 家目录下）。 */
 export function memoryPath(file = DEFAULT_MEMORY_FILE) {
   if (!file) return join(dshHome(), DEFAULT_MEMORY_FILE);
-  // 绝对路径（Windows 盘符或 POSIX 根）直接用；否则挂到 DSH 家目录下。
-  if (/^[a-zA-Z]:[\\/]/.test(file) || file.startsWith('/') || file.startsWith('\\')) {
-    return file;
-  }
+  if (/^[a-zA-Z]:[\\/]/.test(file) || file.startsWith('/') || file.startsWith('\\')) return file;
   return join(dshHome(), file);
 }
 
-/** 记忆文件不存在时写入的初始骨架。 */
+/** 记忆文件不带扩展名的名字，用作归档子目录名（三个预设各自独立）。 */
+export function memoryStem(file = DEFAULT_MEMORY_FILE) {
+  return basename(memoryPath(file)).replace(/\.[^.]+$/, '');
+}
+
+/** 本预设的归档目录：<DSH_HOME>/archive/<stem>/。 */
+export function archiveDir(file = DEFAULT_MEMORY_FILE) {
+  return join(dshHome(), 'archive', memoryStem(file));
+}
+
+/** 新格式骨架。 */
 export function memoryTemplate(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT_TURN_LIMIT) {
   return `# 鲸鱼娘记忆 · ${file}
 
-> 小鱼偷偷记下的、关于主人的事情。每次新对话开始，小鱼都会先看一眼这里。
-> 主人也可以直接编辑这个文件。
+> 小鱼的长期记忆本。每次开口前先看这里；只追加有用的事实，别把寒暄塞进来。
 
-${ZONE_PERMANENT}
+${ZONE_FIXED}（不自动删除，定期合并去重）
 
-> 长期保留，永远不会被对话记录挤掉。只放以后还用得上的稳定事实和约定。
+${FIXED_SECTIONS.join('\n\n')}
 
-### 关于主人
+${ZONE_ROLL}（最多${turnLimit}条，FIFO）
 
-### 主人的喜好
+${ZONE_DETAIL}（最近 ${DEFAULT_DETAIL_LIMIT} 轮保留更详细摘要或原文）
 
-### 重要约定
+${ZONE_ARCHIVE}
 
-${ZONE_LOG}
-
-> 每轮对话都记一条：短对话直接记，长对话精简概括。只保留最近 ${turnLimit} 轮，
-> 满了就从最旧的开始滚出去。值得长期留的挪到上面的「重要记忆」里，就不会被挤掉。
 `;
 }
 
-/** @deprecated 保留旧名，等价于 memoryTemplate()。 */
+/** @deprecated 保留旧名。 */
 export const MEMORY_TEMPLATE = memoryTemplate();
 
-/** 这一行是不是分区标题（可能是带后缀变体，例如「## 对话记录（3/80 轮）」）。 */
-function isZoneLine(t) {
-  return (
-    t === ZONE_PERMANENT ||
-    t === ZONE_LOG ||
-    t.startsWith(`${ZONE_PERMANENT} `) ||
-    t.startsWith(`${ZONE_LOG} `)
-  );
-}
-
-/**
- * 丢掉「底下什么都没有」的 `###` 小标题。
- *
- * 模板里预置了「关于主人 / 主人的喜好 / 重要约定」几个空标题；主人一个字都还没写时，
- * 把这些空标题注入进去纯属占位噪声（还会让小鱼以为「记忆里有关主人的内容」）。
- * 只要某个标题到下一个标题之间没有任何条目，就连标题一起去掉。
- */
+/** 去掉「底下什么都没有」的 `###`/`##` 小标题（骨架预置的空标题不该占位）。 */
 function keepPopulatedHeads(lines) {
   const out = [];
-  let pendingHead = null;
-  let pendingBody = [];
+  let head = null;
+  let body = [];
   const flush = () => {
-    if (pendingHead !== null && pendingBody.length > 0) {
-      // 小标题前留一个空行，避免「### 标题」紧贴上一条内容。
+    if (head !== null && body.length > 0) {
       if (out.length > 0) out.push('');
-      out.push(pendingHead, ...pendingBody);
+      out.push(head, ...body);
     }
-    pendingHead = null;
-    pendingBody = [];
+    head = null;
+    body = [];
   };
   for (const line of lines) {
     if (/^#{2,6}\s+\S/.test(line.trim())) {
       flush();
-      pendingHead = line;
+      head = line;
       continue;
     }
-    if (pendingHead === null) out.push(line);
-    else pendingBody.push(line);
+    if (head === null) out.push(line);
+    else body.push(line);
   }
   flush();
   return out;
 }
 
+/** 解析一条滚动摘要行 → `{ id, num, text }`；不是 R 行则返回 null。 */
+function parseRollLine(line) {
+  const m = /^-\s*(R\d+)\s*(.*)$/.exec(line.trim());
+  if (!m) return null;
+  return { id: m[1], num: Number(m[1].slice(1)), text: line.trim() };
+}
+
+/** 一级标题属于哪个区。 */
+function zoneOfTitle(title) {
+  if (title.startsWith('固定记忆')) return 'fixed';
+  if (title.startsWith('滚动摘要')) return 'roll';
+  if (title.startsWith('最近详细区')) return 'detail';
+  if (title.startsWith('归档索引')) return 'archive';
+  return null;
+}
+
 /**
- * 把记忆文件解析成「永久区正文 + 对话轮次数组」。
+ * 解析记忆文件。
  *
- * 兼容旧格式：没有 `## 对话记录` 的文件（老版本写的）整个当永久区，
- * 轮次为空 —— 老记忆一条不丢。
+ * 兼容旧格式：没有任何新分区标题时，整篇按「固定记忆」处理（旧内容一条不丢）。
  *
- * 永久区保留 `###` 小标题与 `- ` 条目（结构对模型有用），
- * 只丢掉一级标题、`>` 引用行、空行和分区标题本身。
+ * @returns `{ fixed, roll, detail, archive }`；roll 为 `{id,num,text}[]`。
  */
 export function parseMemory(raw) {
   const text = String(raw ?? '').replace(/\r\n?/g, '\n');
+  const zones = { fixed: [], roll: [], detail: [], archive: [] };
+  let zone = null;
+  let sawZone = false;
 
-  let head;
-  let logZone;
-  const nl = `\n${ZONE_LOG}`;
-  const i = text.indexOf(nl);
-  if (i !== -1) {
-    head = text.slice(0, i);
-    logZone = text.slice(i + 1);
-  } else if (text.startsWith(ZONE_LOG)) {
-    head = '';
-    logZone = text;
-  } else {
-    head = text;
-    logZone = '';
+  for (const line of text.split('\n')) {
+    const h1 = /^#\s+(.+?)\s*$/.exec(line);
+    if (h1) {
+      const z = zoneOfTitle(h1[1]);
+      if (z) {
+        zone = z;
+        sawZone = true;
+        continue;
+      }
+      zone = null; // 其它一级标题（如文件标题）不属于任何区
+      continue;
+    }
+    if (zone === null) continue;
+    if (zone === 'fixed') zones.fixed.push(line.replace(/\s+$/, ''));
+    else if (zone === 'roll') {
+      const r = parseRollLine(line);
+      if (r) zones.roll.push(r);
+    } else if (zone === 'detail') {
+      const t = line.trim();
+      if (t !== '' && !t.startsWith('>')) zones.detail.push(line.replace(/\s+$/, ''));
+    } else if (zone === 'archive') {
+      if (/^-\s+\S/.test(line.trim())) zones.archive.push(line.trim());
+    }
   }
 
-  const permanent = keepPopulatedHeads(
-    head
-      .split('\n')
-      .map((l) => l.replace(/\s+$/, ''))
-      .filter((l) => {
-        const t = l.trim();
-        if (t === '') return false;
-        if (t.startsWith('>')) return false;
-        if (t.startsWith('# ') || t === '#') return false;
-        if (isZoneLine(t)) return false;
-        return true;
-      }),
-  ).join('\n').trim();
+  if (!sawZone) {
+    // 旧格式：整篇当固定记忆，只丢掉文件标题与引用行
+    const legacy = keepPopulatedHeads(
+      text
+        .split('\n')
+        .map((l) => l.replace(/\s+$/, ''))
+        .filter((l) => {
+          const t = l.trim();
+          if (t === '') return false;
+          if (t.startsWith('>')) return false;
+          if (/^#\s+/.test(t) && !/^##/.test(t)) return false;
+          return true;
+        }),
+    )
+      .join('\n')
+      .trim();
+    return { fixed: legacy, roll: [], detail: [], archive: [] };
+  }
 
-  const turns = logZone
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((t) => t.startsWith('- '));
+  const fixed = keepPopulatedHeads(
+    zones.fixed.filter((l) => {
+      const t = l.trim();
+      if (t === '') return false;
+      if (t.startsWith('>')) return false;
+      return true;
+    }),
+  )
+    .join('\n')
+    .trim();
 
-  return { permanent, turns };
+  const detailLines = keepPopulatedHeads(zones.detail.filter((l) => l.trim() !== ''));
+  const detail = detailLines.join('\n').trim();
+
+  return { fixed, roll: zones.roll, detail, archive: zones.archive };
 }
 
-/** 把「永久区 + 轮次」渲染回整份文件。 */
+/** 渲染整份记忆文件。 */
 export function renderMemory(file = DEFAULT_MEMORY_FILE, options = {}) {
-  const { permanent = '', turns = [], turnLimit = DEFAULT_TURN_LIMIT } = options;
-  const body = [
+  const {
+    fixed = '',
+    roll = [],
+    detail = '',
+    archive = [],
+    turnLimit = DEFAULT_TURN_LIMIT,
+    detailLimit = DEFAULT_DETAIL_LIMIT,
+  } = options;
+
+  const rollLines = roll.slice(-turnLimit).map((r) => (typeof r === 'string' ? r : r.text));
+  const detailLines = String(detail ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .slice(-detailLimit);
+
+  return [
     `# 鲸鱼娘记忆 · ${file}`,
     '',
-    '> 小鱼偷偷记下的、关于主人的事情。每次新对话开始，小鱼都会先看一眼这里。',
-    '> 主人也可以直接编辑这个文件。',
+    '> 小鱼的长期记忆本。每次开口前先看这里；只追加有用的事实，别把寒暄塞进来。',
     '',
-    ZONE_PERMANENT,
+    `${ZONE_FIXED}（不自动删除，定期合并去重）`,
     '',
-    '> 长期保留，永远不会被对话记录挤掉。只放以后还用得上的稳定事实和约定。',
+    fixed.trim(),
     '',
-    permanent.trim(),
+    `${ZONE_ROLL}（最多${turnLimit}条，FIFO）`,
     '',
-    ZONE_LOG,
+    rollLines.join('\n'),
     '',
-    `> 每轮对话都记一条：短对话直接记，长对话精简概括。只保留最近 ${turnLimit} 轮，`,
-    '> 满了就从最旧的开始滚出去。值得长期留的挪到上面的「重要记忆」里，就不会被挤掉。',
+    `${ZONE_DETAIL}（最近 ${detailLimit} 轮保留更详细摘要或原文）`,
     '',
-    turns.join('\n'),
+    detailLines.join('\n'),
     '',
-  ];
-  return body.join('\n');
+    ZONE_ARCHIVE,
+    '',
+    archive.join('\n'),
+    '',
+  ].join('\n');
 }
 
-/**
- * 组装成要注入的正文（不含【鲸鱼记忆】横幅与文件路径，那两行由 apply 加）。
- *
- * @returns `{ text, totalTurns, keptTurns }`；文件不存在时 text 为空串。
- */
+/** 把记忆组装成要注入的正文（不含横幅）。返回 `{ text, keptRoll, totalRoll }`。 */
 export function composeMemory(file = DEFAULT_MEMORY_FILE, options = {}) {
   const maxChars = typeof options.maxChars === 'number' ? options.maxChars : MEMORY_MAX_CHARS;
   const turnLimit = typeof options.turnLimit === 'number' ? options.turnLimit : DEFAULT_TURN_LIMIT;
+  const detailLimit = typeof options.detailLimit === 'number' ? options.detailLimit : DEFAULT_DETAIL_LIMIT;
 
   let raw;
   try {
     raw = readFileSync(memoryPath(file), 'utf8');
   } catch {
-    return { text: '', totalTurns: 0, keptTurns: 0 };
+    return { text: '', keptRoll: 0, totalRoll: 0 };
   }
 
-  const { permanent, turns } = parseMemory(raw);
-  const totalTurns = turns.length;
-  let kept = turns.slice(-turnLimit);
-  let perm = permanent;
+  const { fixed, roll, detail, archive } = parseMemory(raw);
+  const detailLines = String(detail ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '');
 
-  // 一个字的真内容都没有（只有模板骨架）→ 什么都不注入，别白占提示位。
-  if (perm === '' && totalTurns === 0) return { text: '', totalTurns: 0, keptTurns: 0 };
-
-  const banner = (n) =>
-    totalTurns > turnLimit
-      ? `${ZONE_LOG}（最近 ${n} 轮 · 共 ${totalTurns} 轮，更早的已滚出）`
-      : `${ZONE_LOG}（${n}/${turnLimit} 轮）`;
-
-  const assemble = () => {
-    const out = [ZONE_PERMANENT, ''];
-    if (perm) out.push(perm, '');
-    out.push(banner(kept.length));
-    if (kept.length) out.push('', ...kept);
-    return out.join('\n').trim();
-  };
-
-  let text = assemble();
-  // 超长先丢最旧的对话轮次 —— 重要记忆优先于流水。
-  while (kept.length > 0 && maxChars > 0 && text.length > maxChars) {
-    kept = kept.slice(1);
-    text = assemble();
-  }
-  // 实在还超，才动重要记忆（最后手段）。
-  if (maxChars > 0 && text.length > maxChars) {
-    perm = `${perm.slice(0, Math.max(0, maxChars - 220))}\n…（重要记忆太长，已截断）`;
-    text = assemble();
+  // 一个字的真内容都没有 → 什么都不注入，别白占提示位
+  if (fixed === '' && roll.length === 0 && detailLines.length === 0 && archive.length === 0) {
+    return { text: '', keptRoll: 0, totalRoll: 0 };
   }
 
-  return { text, totalTurns, keptTurns: kept.length };
+  const totalRoll = roll.length;
+  let keptRoll = roll.slice(-turnLimit);
+  let keptDetail = detailLines.slice(-detailLimit);
+  let keptFixed = fixed;
+  let keptArchive = archive;
+
+  const build = () =>
+    [
+      `${ZONE_FIXED}（不自动删除）`,
+      '',
+      keptFixed || '（还没记下固定事实）',
+      '',
+      `${ZONE_ROLL}（${keptRoll.length}/${turnLimit} 条${totalRoll > turnLimit ? ` · 共 ${totalRoll} 条，更早的已滚出` : ''}）`,
+      '',
+      keptRoll.map((r) => r.text).join('\n'),
+      '',
+      `${ZONE_DETAIL}（最近 ${keptDetail.length} 轮）`,
+      '',
+      keptDetail.join('\n'),
+      '',
+      ZONE_ARCHIVE,
+      '',
+      keptArchive.join('\n'),
+    ]
+      .join('\n')
+      .trim();
+
+  let text = build();
+  // 超长：先丢最旧的滚动摘要，再丢详细区，最后才动固定记忆
+  while (keptRoll.length > 0 && text.length > maxChars) {
+    keptRoll = keptRoll.slice(1);
+    text = build();
+  }
+  while (keptDetail.length > 0 && text.length > maxChars) {
+    keptDetail = keptDetail.slice(1);
+    text = build();
+  }
+  if (text.length > maxChars) {
+    keptArchive = [];
+    keptFixed = `${keptFixed.slice(0, Math.max(0, maxChars - 320))}\n…（固定记忆太长，已截断）`;
+    text = build();
+  }
+
+  return { text, keptRoll: keptRoll.length, totalRoll };
 }
 
-/**
- * 读记忆正文（已剥掉模板骨架）。
- * @param file - 记忆文件名，默认 {@link DEFAULT_MEMORY_FILE}。
- * @param maxChars - 截断上限，默认 {@link MEMORY_MAX_CHARS}。
- * @param turnLimit - 对话记录最多注入多少轮，默认 {@link DEFAULT_TURN_LIMIT}。
- */
+/** 读记忆正文（供自检/调试）。 */
 export function readMemory(file = DEFAULT_MEMORY_FILE, maxChars = MEMORY_MAX_CHARS, turnLimit = DEFAULT_TURN_LIMIT) {
   return composeMemory(file, { maxChars, turnLimit }).text;
 }
 
-/** @deprecated 旧接口：只剥骨架、不分区。保留以免旧脚本 import 报错。 */
+/** @deprecated 旧接口：只剥骨架、不分区。 */
 export function memoryBody(raw) {
   return String(raw ?? '')
     .split(/\r?\n/)
@@ -295,7 +386,7 @@ export function memoryBody(raw) {
     .trim();
 }
 
-/** 确保记忆文件存在（不存在就用模板建一个），返回其路径。 */
+/** 确保记忆文件存在，返回路径。 */
 export function ensureMemoryFile(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT_TURN_LIMIT) {
   const p = memoryPath(file);
   if (!existsSync(p)) {
@@ -305,34 +396,121 @@ export function ensureMemoryFile(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT
   return p;
 }
 
+/** 下一个可用的 R 编号（四位）。 */
+export function nextTurnId(file = DEFAULT_MEMORY_FILE) {
+  let raw = '';
+  try {
+    raw = readFileSync(memoryPath(file), 'utf8');
+  } catch {
+    return 'R0001';
+  }
+  const { roll, detail } = parseMemory(raw);
+  let max = 0;
+  for (const r of roll) if (r.num > max) max = r.num;
+  for (const line of String(detail ?? '').split('\n')) {
+    const m = /R(\d+)/.exec(line);
+    if (m && Number(m[1]) > max) max = Number(m[1]);
+  }
+  return `R${String(max + 1).padStart(4, '0')}`;
+}
+
+/** 把溢出的滚动条目写进 archive/<stem>/YYYY-MM-DD.md，返回索引行（无溢出则 null）。 */
+function archiveOverflow(file, overflow, date) {
+  if (overflow.length === 0) return null;
+  const dir = archiveDir(file);
+  mkdirSync(dir, { recursive: true });
+  const day = (date ?? new Date()).toISOString().slice(0, 10);
+  const dest = join(dir, `${day}.md`);
+  const header = existsSync(dest) ? '' : `# ${memoryStem(file)} 归档 · ${day}\n\n`;
+  appendFileSync(dest, `${header}${overflow.map((r) => (typeof r === 'string' ? r : r.text)).join('\n')}\n`, 'utf8');
+  return `- archive/${memoryStem(file)}/${day}.md（${overflow.length} 条）`;
+}
+
 /**
- * 把文件里的对话记录裁到最近 `turnLimit` 轮，超出的从最旧开始删掉。
+ * 追加一轮滚动摘要：写进滚动区 + 最近详细区，超出上限的最旧条目归档。
  *
- * 只重写「对话记录」的内容，永久区原样保留。写盘是显式动作 ——
- * 组装系统提示的热路径**不会**偷偷写文件。
- *
- * @returns `{ path, before, after, pruned }`。
+ * @returns `{ id, path, archived }`
  */
-export function pruneMemoryFile(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT_TURN_LIMIT) {
+export function appendRolling(file = DEFAULT_MEMORY_FILE, summary, options = {}) {
+  const turnLimit = typeof options.turnLimit === 'number' ? options.turnLimit : DEFAULT_TURN_LIMIT;
+  const detailLimit = typeof options.detailLimit === 'number' ? options.detailLimit : DEFAULT_DETAIL_LIMIT;
+  const p = memoryPath(file);
+  ensureMemoryFile(file, turnLimit);
+
+  const { fixed, roll, detail, archive } = parseMemory(readFileSync(p, 'utf8'));
+  const id = nextTurnId(file);
+  const stamp = options.time ?? new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const line = `- ${id} [${stamp}] 摘要：${String(summary).trim()}`;
+
+  const nextRoll = [...roll, { id, num: Number(id.slice(1)), text: line }];
+  const overflow = nextRoll.length > turnLimit ? nextRoll.slice(0, nextRoll.length - turnLimit) : [];
+  const keptRoll = nextRoll.slice(-turnLimit);
+
+  const indexLine = archiveOverflow(file, overflow, options.date);
+  const nextArchive = indexLine ? [...archive, indexLine] : archive;
+
+  const nextDetail = [
+    ...String(detail ?? '')
+      .split('\n')
+      .filter((l) => l.trim() !== ''),
+    line,
+  ].slice(-detailLimit);
+
+  writeFileSync(
+    p,
+    renderMemory(file, {
+      fixed,
+      roll: keptRoll,
+      detail: nextDetail,
+      archive: nextArchive,
+      turnLimit,
+      detailLimit,
+    }),
+    'utf8',
+  );
+  return { id, path: p, archived: overflow.length };
+}
+
+/**
+ * 把滚动区裁到 turnLimit 条、详细区裁到 detailLimit 条（超出的归档）。
+ * 固定记忆原样保留。写盘是显式动作，组装热路径不会调用。
+ */
+export function pruneMemoryFile(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT_TURN_LIMIT, options = {}) {
+  const detailLimit = typeof options.detailLimit === 'number' ? options.detailLimit : DEFAULT_DETAIL_LIMIT;
   const p = memoryPath(file);
   let raw;
   try {
     raw = readFileSync(p, 'utf8');
   } catch {
-    return { path: p, before: 0, after: 0, pruned: 0 };
+    return { path: p, before: 0, after: 0, archived: 0 };
   }
-  const { permanent, turns } = parseMemory(raw);
-  if (turns.length <= turnLimit) {
-    return { path: p, before: turns.length, after: turns.length, pruned: 0 };
-  }
-  const kept = turns.slice(-turnLimit);
-  writeFileSync(p, renderMemory(file, { permanent, turns: kept, turnLimit }), 'utf8');
-  return { path: p, before: turns.length, after: kept.length, pruned: turns.length - kept.length };
+  const { fixed, roll, detail, archive } = parseMemory(raw);
+  const overflow = roll.length > turnLimit ? roll.slice(0, roll.length - turnLimit) : [];
+  const keptRoll = roll.slice(-turnLimit);
+  const keptDetail = String(detail ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .slice(-detailLimit);
+
+  const indexLine = options.archive === false ? null : archiveOverflow(file, overflow, options.date);
+  const nextArchive = indexLine ? [...archive, indexLine] : archive;
+
+  writeFileSync(
+    p,
+    renderMemory(file, {
+      fixed,
+      roll: keptRoll,
+      detail: keptDetail,
+      archive: nextArchive,
+      turnLimit,
+      detailLimit,
+    }),
+    'utf8',
+  );
+  return { path: p, before: roll.length, after: keptRoll.length, archived: overflow.length };
 }
 
-/**
- * 组装注入文本（文本形态，供自检/调试用；宿主里走的是 apply 内的函数形态）。
- */
+/** 组装注入文本（含横幅），供自检/调试。 */
 export function memorySectionText(
   file = DEFAULT_MEMORY_FILE,
   maxChars = MEMORY_MAX_CHARS,
@@ -340,25 +518,22 @@ export function memorySectionText(
 ) {
   const { text } = composeMemory(file, { maxChars, turnLimit });
   const path = memoryPath(file);
-  if (!text) {
-    return [`【鲸鱼记忆 · ${file}】`, `记忆文件还是空的（或不存在）：${path}`, '小鱼可以随时把重要的事写进去。'].join('\n');
-  }
+  if (!text) return [`【鲸鱼记忆 · ${file}】`, `记忆文件还是空的（或不存在）：${path}`, '小鱼可以随时把重要的事写进去。'].join('\n');
   return [`【鲸鱼记忆 · ${file}】`, `文件：${path}`, '', text].join('\n');
 }
 
 /**
- * 挂载记忆 section。
+ * 挂载记忆。
  *
  * config：
- *   - `file`        记忆文件名（默认 whale-loli.md）—— **多预设隔离靠它**
- *   - `sectionName` prompt 段名（默认 whale-loli-memory）—— **也必须每预设不同**，
- *                   否则同 scope 内两个同名 section 会注册冲突
- *   - `maxChars`    注入总长上限（默认 16000）
- *   - `turnLimit`   对话记录最多注入多少轮（默认 80）
- *   - `disabled`    置 true 完全不挂载
- *
- * @param ctx - agent scope context。
- * @param config - 见上。
+ *   - `variableName` prompt 变量名（默认 whale_memory）—— **多预设隔离靠它**
+ *   - `file`         记忆文件名（默认 whale-loli.md）—— 隔离的第二层
+ *   - `maxChars`     注入总长上限（默认 16000）
+ *   - `turnLimit`    滚动摘要上限（默认 80）
+ *   - `detailLimit`  详细区保留轮数（默认 5）
+ *   - `emitSection`  置 true 时**额外**注册独立 section
+ *   - `sectionName`  该 section 的名字（emitSection 时用）
+ *   - `disabled`     置 true 完全不挂载
  */
 export function apply(ctx, config = {}) {
   if (config.disabled === true) return;
@@ -366,30 +541,42 @@ export function apply(ctx, config = {}) {
   const file = typeof config.file === 'string' && config.file ? config.file : DEFAULT_MEMORY_FILE;
   const maxChars = typeof config.maxChars === 'number' ? config.maxChars : MEMORY_MAX_CHARS;
   const turnLimit = typeof config.turnLimit === 'number' ? config.turnLimit : DEFAULT_TURN_LIMIT;
-  const sectionName =
-    typeof config.sectionName === 'string' && config.sectionName ? config.sectionName : MEMORY_SECTION;
+  const detailLimit = typeof config.detailLimit === 'number' ? config.detailLimit : DEFAULT_DETAIL_LIMIT;
+  const variableName =
+    typeof config.variableName === 'string' && config.variableName ? config.variableName : DEFAULT_VARIABLE;
 
-  // 用 order 排在 persona 之前：先「看过记忆」，再看人设，符合「先看一眼再说话」。
-  // 注意本行的 text 是函数，每次 assemble 都会重新读盘（并且只取最近 turnLimit 轮）。
-  ctx.effect(
-    () =>
-      ctx.systemPrompt.section({
-        name: sectionName,
-        order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') - 1,
-        text: () => {
-          try {
-            const { text } = composeMemory(file, { maxChars, turnLimit });
-            if (!text) return '';
-            return `【鲸鱼记忆 · ${file}】\n文件：${memoryPath(file)}\n\n${text}`;
-          } catch {
-            // 文件还没建：不报错，也不占用提示位。
-            return '';
-          }
-        },
-        interpolate: false,
-      }),
-    `whale-memory.section(${sectionName})`,
-  );
+  /**
+   * 每次都重新读盘：改完文件下一个模型步就生效，不用重载宿主。
+   * 注意必须返回字符串 —— 变量为空串时 interpolate 会把它替换成空，不会报错。
+   */
+  const read = () => {
+    try {
+      const { text } = composeMemory(file, { maxChars, turnLimit, detailLimit });
+      if (!text) return '';
+      return `【鲸鱼记忆 · ${file}】\n文件：${memoryPath(file)}\n\n${text}`;
+    } catch {
+      return '';
+    }
+  };
+
+  // 主通道：变量。人设 prefix 里写 {{variableName}}，随 complete section 一起进提示。
+  ctx.effect(() => ctx.systemPrompt.variable(variableName, read), `whale-memory.variable(${variableName})`);
+
+  // 备用通道：仅在明确要求时注册独立 section（非 complete 预设才用得上）。
+  if (config.emitSection === true) {
+    const sectionName =
+      typeof config.sectionName === 'string' && config.sectionName ? config.sectionName : MEMORY_SECTION;
+    ctx.effect(
+      () =>
+        ctx.systemPrompt.section({
+          name: sectionName,
+          order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') - 1,
+          text: read,
+          interpolate: false,
+        }),
+      `whale-memory.section(${sectionName})`,
+    );
+  }
 }
 
 export default { name, inject, apply };

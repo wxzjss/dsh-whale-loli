@@ -1,5 +1,5 @@
-// 验证新版记忆规则：两区解析、80 轮滚动、重要记忆不被挤掉、超长先丢旧轮次。
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+﻿// 验证新版记忆规则（固定记忆永久 + 滚动摘要 80 条 FIFO + 详细区 + 归档）。
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,99 +17,137 @@ const check = (label, cond, extra = '') => {
 const FILE = 'whale-loli.md';
 const P = join(home, FILE);
 
-// ── 造一个 100 轮的记忆文件：3 条重要记忆 + 100 轮对话 ──────────────
-const turns = Array.from({ length: 100 }, (_, i) => `- 2026-10-18 第${i + 1}轮：主人说事 ${i + 1} / 小鱼答 ${i + 1}`);
-writeFileSync(
-  P,
-  `# 鲸鱼娘记忆 · ${FILE}
+/** 拼一份符合新格式的记忆文件。rollText / detailText 必须落在各自区内。 */
+const build = ({ rollText = '', detailText = '' } = {}) => `# 鲸鱼娘记忆 · ${FILE}
 
 > 说明行
 
-## 重要记忆
+# 固定记忆（不自动删除，定期合并去重）
 
-> 永久区说明
+## 任务目标
 
-### 关于主人
+- 把插件做好并发布。
 
-- 主人叫阿澈。
-- 主人不自己写代码。
+## 用户约束/偏好
 
-## 对话记录
+- 主人要短句，不要小作文。
 
-> 流水说明
+## 待办
 
-${turns.join('\n')}
-`,
-  'utf8',
-);
+- 还没做汉化。
 
-console.log('=== 1. 解析 ===');
-const parsed = mod.parseMemory(readFileSync(P, 'utf8'));
-check('永久区条目保留 2 条', parsed.permanent.includes('主人叫阿澈') && parsed.permanent.includes('主人不自己写代码'));
-check('对话轮次解析出 100 轮', parsed.turns.length === 100, `实际 ${parsed.turns.length}`);
-check('永久区不含说明行', !parsed.permanent.includes('永久区说明'));
-check('永久区保留了 ### 小标题', parsed.permanent.includes('### 关于主人'));
+# 滚动摘要（最多80条，FIFO）
 
-console.log('\n=== 2. 注入只带最近 80 轮 ===');
-const c = mod.composeMemory(FILE, { maxChars: 16000, turnLimit: 80 });
-check('keptTurns = 80', c.keptTurns === 80, `实际 ${c.keptTurns}`);
-check('totalTurns = 100', c.totalTurns === 100);
-check('含最新一轮(第100轮)', c.text.includes('第100轮：'));
-check('不含第20轮（已滚出）', !c.text.includes('第20轮：'));
-check('含第21轮（窗口内最旧）', c.text.includes('第21轮：'));
-check('重要记忆仍在', c.text.includes('主人叫阿澈'));
-check('横幅显示 共 100 轮', c.text.includes('共 100 轮'));
-// 只数「对话记录」区里的条目（永久区也有 `- ` 行，不能一起数）
-const logSection = c.text.slice(c.text.indexOf('## 对话记录'));
-const injected = (logSection.match(/^- /gm) ?? []).length;
-check('注入的对话条数 = 80', injected === 80, `实际 ${injected}`);
+${rollText}
+# 最近详细区（最近 5 轮保留更详细摘要或原文）
 
-console.log('\n=== 3. 重要记忆不占 80 轮名额 ===');
-const withPerm = mod.composeMemory(FILE, { turnLimit: 80 });
-const permLines = withPerm.text.split('\n').filter((l) => l.startsWith('- ') && !l.includes('轮：'));
-check('80 轮之外另有永久条目', permLines.length === 2, `永久条目 ${permLines.length}`);
+${detailText}
+# 归档索引
 
-console.log('\n=== 4. 超长时先丢旧轮次，不丢重要记忆 ===');
-const tight = mod.composeMemory(FILE, { maxChars: 1200, turnLimit: 80 });
-check('被压缩到 <= 1200', tight.text.length <= 1200, `实际 ${tight.text.length}`);
-check('重要记忆仍在', tight.text.includes('主人叫阿澈'));
-check('保留的是最新几轮', tight.text.includes('第100轮：'));
-check('丢掉了更旧的轮次', !tight.text.includes('第21轮：'));
+`;
 
-console.log('\n=== 5. 轮数没满时按 N/80 显示 ===');
-writeFileSync(
-  P,
-  `# 标题\n\n## 重要记忆\n\n- 只有一条永久\n\n## 对话记录\n\n- 第1轮\n- 第2轮\n`,
-  'utf8',
-);
-const small = mod.composeMemory(FILE, { turnLimit: 80 });
-check('横幅显示 2/80 轮', small.text.includes('（2/80 轮）'));
-check('keptTurns=2', small.keptTurns === 2);
+console.log('=== 1. 解析四个区 ===');
+{
+  const turns = Array.from({ length: 100 }, (_, i) => `- R${String(i + 1).padStart(4, '0')} [2026-10-19 12:0${i % 10}] 摘要：第${i + 1}轮`);
+  writeFileSync(P, build({ rollText: turns.join('\n') }), 'utf8');
+  const parsed = mod.parseMemory(readFileSync(P, 'utf8'));
+  check('固定区含任务目标', parsed.fixed.includes('把插件做好并发布'));
+  check('固定区含偏好', parsed.fixed.includes('主人要短句'));
+  check('固定区不含说明行', !parsed.fixed.includes('说明行'));
+  check('固定区保留 ## 小标题', parsed.fixed.includes('## 任务目标'));
+  check('固定区丢掉空小节（无 关键决策）', !parsed.fixed.includes('## 关键决策'));
+  check('滚动区解析 100 条', parsed.roll.length === 100, `实际 ${parsed.roll.length}`);
+  check('R 行带编号', parsed.roll[0]?.id === 'R0001' && parsed.roll[99]?.id === 'R0100');
+}
 
-console.log('\n=== 6. pruneMemoryFile 真能裁文件 ===');
-writeFileSync(
-  P,
-  `# 标题\n\n## 重要记忆\n\n- 永久条目\n\n## 对话记录\n\n${turns.join('\n')}\n`,
-  'utf8',
-);
-const pr = mod.pruneMemoryFile(FILE, 80);
-check('裁掉 20 轮', pr.pruned === 20, `before=${pr.before} after=${pr.after}`);
-const after = readFileSync(P, 'utf8');
-check('文件里只剩 80 条对话', (after.match(/^- 2026/gm) ?? []).length === 80);
-check('裁剪后重要记忆还在', after.includes('永久条目'));
+console.log('\n=== 2. 注入只带最近 80 条 ===');
+{
+  const c = mod.composeMemory(FILE, { maxChars: 16000, turnLimit: 80, detailLimit: 5 });
+  check('keptRoll = 80', c.keptRoll === 80, `实际 ${c.keptRoll}`);
+  check('totalRoll = 100', c.totalRoll === 100);
+  check('含 R0100', c.text.includes('R0100'));
+  check('不含 R0020（已滚出）', !c.text.includes('R0020 '));
+  check('含 R0021（窗口内最旧）', c.text.includes('R0021 '));
+  check('固定记忆仍在', c.text.includes('把插件做好并发布'));
+  const rollSection = c.text.slice(c.text.indexOf('# 滚动摘要'));
+  const n = (rollSection.match(/^- R\d+/gm) ?? []).length;
+  check('注入的滚动条数 = 80', n === 80, `实际 ${n}`);
+}
 
-console.log('\n=== 7. 老格式（无「对话记录」区）不丢内容 ===');
-writeFileSync(
-  P,
-  `# 老文件\n\n> 引用\n\n## 关于主人\n\n- 老格式的一条记忆\n- 老格式的另一条\n`,
-  'utf8',
-);
-const legacy = mod.parseMemory(readFileSync(P, 'utf8'));
-check('旧条目全进永久区', legacy.permanent.includes('老格式的一条记忆') && legacy.permanent.includes('老格式的另一条'));
-check('轮次为空', legacy.turns.length === 0);
-const legacyOut = mod.composeMemory(FILE, { turnLimit: 80 });
-check('旧内容仍被注入', legacyOut.text.includes('老格式的一条记忆'));
+console.log('\n=== 3. 固定记忆不占 80 条名额 ===');
+{
+  const c = mod.composeMemory(FILE, { turnLimit: 80 });
+  const fixedPart = c.text.slice(0, c.text.indexOf('# 滚动摘要'));
+  const n = (fixedPart.match(/^- /gm) ?? []).length;
+  check('固定区条目独立存在（3 条）', n === 3, `实际 ${n}`);
+}
+
+console.log('\n=== 4. 超长先丢旧滚动条，固定记忆最后动 ===');
+{
+  const c = mod.composeMemory(FILE, { maxChars: 1500, turnLimit: 80, detailLimit: 5 });
+  check('被压到 <= 1500', c.text.length <= 1500, `实际 ${c.text.length}`);
+  check('固定记忆仍在', c.text.includes('把插件做好并发布'));
+  check('保留最新', c.text.includes('R0100'));
+}
+
+console.log('\n=== 5. appendRolling 递增编号 + 溢出归档 ===');
+{
+  const turns = Array.from({ length: 80 }, (_, i) => `- R${String(i + 1).padStart(4, '0')} [t] 摘要：第${i + 1}轮`);
+  writeFileSync(P, build({ rollText: turns.join(String.fromCharCode(10)) }), 'utf8');
+
+  const r81 = mod.appendRolling(FILE, '第81轮聊了记忆格式', { turnLimit: 80, detailLimit: 5, date: new Date('2026-10-19') });
+  check('新编号是 R0081', r81.id === 'R0081', `实际 ${r81.id}`);
+  check('归档了 1 条', r81.archived === 1, `实际 ${r81.archived}`);
+
+  const after = mod.parseMemory(readFileSync(P, 'utf8'));
+  check('文件里仍只有 80 条', after.roll.length === 80, `实际 ${after.roll.length}`);
+  check('R0001 已滚出', !after.roll.some((x) => x.id === 'R0001'));
+  check('R0081 在文件里', after.roll.some((x) => x.id === 'R0081'));
+  check('详细区含 R0081', after.detail.includes('R0081'));
+  check('归档索引有记录', after.archive.length === 1, `实际 ${after.archive.length}`);
+
+  const archFile = join(home, 'archive', 'whale-loli', '2026-10-19.md');
+  check('归档文件已生成', existsSync(archFile));
+  check('归档内容含 R0001', existsSync(archFile) && readFileSync(archFile, 'utf8').includes('R0001'));
+  check('归档索引指向正确路径', after.archive[0].includes('archive/whale-loli/2026-10-19.md'));
+}
+
+console.log('\n=== 6. 归档按预设分目录（三个互不覆盖） ===');
+{
+  const a = mod.archiveDir('whale-loli.md');
+  const b = mod.archiveDir('whale-loli-v2-live.md');
+  const c = mod.archiveDir('whale-loli-v3-naughty.md');
+  check('三个归档目录互不相同', new Set([a, b, c]).size === 3);
+  check('目录名带各自 stem', a.endsWith('whale-loli') && b.endsWith('whale-loli-v2-live') && c.endsWith('whale-loli-v3-naughty'));
+}
+
+console.log('\n=== 7. pruneMemoryFile ===');
+{
+  const turns = Array.from({ length: 100 }, (_, i) => `- R${String(i + 1).padStart(4, '0')} [t] 摘要：第${i + 1}轮`);
+  writeFileSync(P, build({ rollText: turns.join(String.fromCharCode(10)) }), 'utf8');
+  const pr = mod.pruneMemoryFile(FILE, 80, { detailLimit: 5, date: new Date('2026-10-19') });
+  check('裁掉 20 条', pr.archived === 20, `before=${pr.before} after=${pr.after}`);
+  const after = readFileSync(P, 'utf8');
+  check('文件剩 80 条', (after.match(/^- R\d+/gm) ?? []).length === 80);
+  check('固定记忆保留', after.includes('把插件做好并发布'));
+}
+
+console.log('\n=== 8. 旧格式兼容（无分区标题）===');
+{
+  writeFileSync(P, `# 老文件\n\n> 引用\n\n## 关于主人\n\n- 老格式的一条记忆\n- 老格式的另一条\n`, 'utf8');
+  const legacy = mod.parseMemory(readFileSync(P, 'utf8'));
+  check('旧条目全进固定区', legacy.fixed.includes('老格式的一条记忆') && legacy.fixed.includes('老格式的另一条'));
+  check('滚动区为空', legacy.roll.length === 0);
+  check('旧内容仍被注入', mod.composeMemory(FILE).text.includes('老格式的一条记忆'));
+}
+
+console.log('\n=== 9. 空骨架不注入 ===');
+{
+  writeFileSync(P, mod.memoryTemplate(FILE), 'utf8');
+  check('只有骨架 → 注入空串', mod.composeMemory(FILE).text === '');
+}
 
 rmSync(home, { recursive: true, force: true });
-console.log('\nRESULT:', ok ? 'PASS —— 记忆两区 + 80 轮滚动规则成立' : 'FAIL');
+console.log('\nRESULT:', ok ? 'PASS —— 固定记忆 + 80 条滚动 + 详细区 + 归档 规则成立' : 'FAIL');
 process.exit(ok ? 0 : 1);
+

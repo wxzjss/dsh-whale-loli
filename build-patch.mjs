@@ -31,17 +31,18 @@ const personaV2 = readFileSync(root + 'src/persona-v2-live.md', 'utf8');
 const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
 
 /** 三个预设共用的工具面行（含参数化记忆行）。 */
-function toolRows({ memoryFile, memorySection, memoryMax, memoryTurns }) {
-  return `          # 长期记忆：每次组装系统提示时实时读 ${memoryFile}
-          # sectionName 必须每个预设不同，否则同 scope 注册同名 section 会冲突
-          # turnLimit = 对话记录的滚动上限（轮）；「重要记忆」不占这个名额
+function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail }) {
+  return `          # 长期记忆：注册成提示变量，由人设开头的 {{${memoryVariable}}} 引用。
+          # persona 是 complete:true，宿主会把独立 section 丢掉（见 src/memory.js 顶部注释），
+          # 所以记忆必须走 variable 通道；variableName 也要每预设不同，否则同 scope 注册冲突。
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
               file: ${memoryFile}
-              sectionName: ${memorySection}
+              variableName: ${memoryVariable}
               maxChars: ${memoryMax}
               turnLimit: ${memoryTurns}
+              detailLimit: ${memoryDetail}
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -118,7 +119,7 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（三个�
 ${block(persona)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli.md', memorySection: 'whale-loli-memory', memoryMax: 16000, memoryTurns: 80 })}
+${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设二：鲸鱼娘活人版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘活人版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -136,7 +137,7 @@ ${toolRows({ memoryFile: 'whale-loli.md', memorySection: 'whale-loli-memory', me
 ${block(personaV2)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v2-live.md', memorySection: 'whale-loli-v2-live-memory', memoryMax: 16000, memoryTurns: 80 })}
+${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设三：鲸鱼娘涩涩版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘涩涩版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -154,7 +155,7 @@ ${toolRows({ memoryFile: 'whale-loli-v2-live.md', memorySection: 'whale-loli-v2-
 ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memorySection: 'whale-loli-v3-naughty-memory', memoryMax: 16000, memoryTurns: 80 })}
+${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');

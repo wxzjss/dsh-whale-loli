@@ -58,6 +58,7 @@ jobs:
           node verify-patch.mjs cordis.patch.yml
           node verify-real-loader.mjs cordis.patch.yml
           node verify-composition.mjs
+          node verify-memory-injection.mjs
           node verify-memory-isolation.mjs
           node verify-memory-rolling.mjs
           node smoke-memory.mjs
@@ -84,6 +85,12 @@ jobs:
             echo "::error::verify-memory-rolling 在 CI 里被跳过了，但它不该跳过"
             exit 1
           fi
+          # 这条最关键：证明记忆真的进得了模型看到的提示（变量通道），
+          # 而独立 section 会被 complete:true 丢掉 —— 防止哪天又退回死路。
+          inject="$(node verify-memory-injection.mjs 2>&1)"
+          echo "$inject"
+          echo "$inject" | grep -q "RESULT: PASS"
+          echo "$inject" | grep -q "变量通道成立"
 
       # tag 版本号必须与 package.json 一致，避免发出错版本
       - name: Check tag matches package.json version

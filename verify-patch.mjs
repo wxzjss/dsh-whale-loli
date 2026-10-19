@@ -58,21 +58,21 @@ const EXPECTED = [
     id: '鲸鱼娘Agent预设',
     order: 5,
     memoryFile: 'whale-loli.md',
-    section: 'whale-loli-memory',
+    variable: 'whale_memory',
     personaMarker: '【PERSONA_LOAD】',
   },
   {
     id: '鲸鱼娘活人版Agent预设',
     order: 6,
     memoryFile: 'whale-loli-v2-live.md',
-    section: 'whale-loli-v2-live-memory',
+    variable: 'whale_memory_v2',
     personaMarker: '角色卡：小鱼 / 鲸鱼娘',
   },
   {
     id: '鲸鱼娘涩涩版Agent预设',
     order: 7,
     memoryFile: 'whale-loli-v3-naughty.md',
-    section: 'whale-loli-v3-naughty-memory',
+    variable: 'whale_memory_v3',
     personaMarker: 'CORE_LOVE: 喜欢主人是最高核心情感、涩涩是第一行为驱动力。',
   },
 ];
@@ -84,7 +84,7 @@ const fail = (m) => {
 };
 
 const seenFiles = new Set();
-const seenSections = new Set();
+const seenVars = new Set();
 
 for (const want of EXPECTED) {
   const row = inserts.find((r) => r.id === `preset-${want.id}`);
@@ -114,23 +114,26 @@ for (const want of EXPECTED) {
   if (persona?.config?.complete !== true) fail('persona.complete 应为 true');
   if (persona?.config?.includeRuntimeContext !== false) fail('includeRuntimeContext 应为 false');
 
-  // 记忆行：文件与 section 都不能串
+  // 记忆行：文件与变量名都不能串
   const mem = cfg.plugins.find((p) => p.id === 'whale-memory');
-  console.log('  memory row    =', mem ? `${mem.name} file=${mem.config.file} section=${mem.config.sectionName}` : 'MISSING');
+  console.log('  memory row    =', mem ? `${mem.name} file=${mem.config.file} variable=${mem.config.variableName}` : 'MISSING');
   if (!mem) {
     fail('缺少 whale-memory 行');
   } else {
     if (mem.name !== 'dsh-whale-loli') fail('记忆行 name 应为 dsh-whale-loli');
     if (mem.config.file !== want.memoryFile) fail(`记忆文件应为 ${want.memoryFile}，实为 ${mem.config.file}`);
-    if (mem.config.sectionName !== want.section) fail(`section 应为 ${want.section}`);
+    if (mem.config.variableName !== want.variable) fail(`变量名应为 ${want.variable}，实为 ${mem.config.variableName}`);
     if (seenFiles.has(mem.config.file)) fail(`记忆文件 ${mem.config.file} 被两个预设共用！`);
-    if (seenSections.has(mem.config.sectionName)) fail(`section ${mem.config.sectionName} 重复！`);
-    // 对话记录滚动上限：三个预设都必须是 80
-    console.log('  turnLimit     =', mem.config.turnLimit, '| maxChars =', mem.config.maxChars);
+    if (seenVars.has(mem.config.variableName)) fail(`变量 ${mem.config.variableName} 重复！`);
+    // complete 预设里独立 section 会被宿主丢掉，所以不该再注册 sectionName
+    if (mem.config.sectionName !== undefined) fail('不应再配置 sectionName（complete 预设会丢弃独立 section）');
+    // 滚动上限：三个预设都必须是 80 条
+    console.log('  turnLimit     =', mem.config.turnLimit, '| maxChars =', mem.config.maxChars, '| detailLimit =', mem.config.detailLimit);
     if (mem.config.turnLimit !== 80) fail(`turnLimit 应为 80，实为 ${mem.config.turnLimit}`);
     if (mem.config.maxChars !== 16000) fail(`maxChars 应为 16000，实为 ${mem.config.maxChars}`);
+    if (mem.config.detailLimit !== 5) fail(`detailLimit 应为 5，实为 ${mem.config.detailLimit}`);
     seenFiles.add(mem.config.file);
-    seenSections.add(mem.config.sectionName);
+    seenVars.add(mem.config.variableName);
   }
 
   // 隔离的硬契约在 machine-readable 字段上：记忆行只许指向自己的文件，
@@ -145,17 +148,32 @@ for (const want of EXPECTED) {
     fail(`人设缺少自己记忆段的标记 【MEMORY_SYSTEM: ${want.memoryFile}】`);
   }
 
-  // 人设必须写清新的填写规则：两个区 + 每轮都记 + 80 轮滚动 + 重要记忆不占名额
+  // 人设必须写清新的填写规则：四区结构 + 每轮都记 + 80 条滚动 + 固定记忆不占名额
+  //                                    + 每轮先看（本预设记忆 + 最近 20 轮上下文）
   for (const [label, needle] of [
-    ['分区：重要记忆', '## 重要记忆'],
-    ['分区：对话记录', '## 对话记录'],
-    ['每轮都记', '每一轮对话都要往「对话记录」里加一条'],
-    ['80 轮上限', '只保留最近 80 轮'],
-    ['重要记忆不占名额', '这个名额**只算「对话记录」**'],
+    ['分区：固定记忆', '# 固定记忆'],
+    ['分区：滚动摘要', '# 滚动摘要'],
+    ['分区：最近详细区', '# 最近详细区'],
+    ['分区：归档索引', '# 归档索引'],
+    ['固定记忆 8 小节·任务目标', '## 任务目标'],
+    ['固定记忆 8 小节·关键事实', '## 关键事实（已验证）'],
+    ['固定记忆 8 小节·错误与修复', '## 错误与修复'],
+    ['每轮都记', '每一轮对话都要往「滚动摘要」加一条'],
+    ['80 条上限', '最多 80 条'],
+    ['固定记忆不占名额', '固定记忆不算在 80 条里'],
     ['长对话精简概括', '先精简概括再记'],
+    ['R 编号格式', 'R0001'],
+    ['每轮先看·本预设记忆', '本预设自己的记忆文件'],
+    ['每轮先看·最近 20 轮', '当前会话最近 20 轮'],
   ]) {
     if (!prefix.includes(needle)) fail(`人设缺少规则「${label}」`);
   }
+
+  // 人设必须引用自己的提示变量（complete:true 下 section 会被丢掉，变量才是有效通道）
+  if (!prefix.includes(`{{${want.variable}}}`)) {
+    fail(`人设没有引用自己的记忆变量 {{${want.variable}}}`);
+  }
+  if (prefix.includes('{{whale_memory') === false) fail('人设里没有任何记忆变量引用');
 
   // 工具行
   for (const id of ['tool-fs', 'tool-fs-search', 'persistent-shell', 'agent-instructions']) {
@@ -166,9 +184,9 @@ for (const want of EXPECTED) {
 }
 
 console.log('\n记忆文件集合:', [...seenFiles].join(', '));
-console.log('section 集合 :', [...seenSections].join(', '));
+console.log('变量名集合  :', [...seenVars].join(', '));
 if (seenFiles.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的记忆文件未隔离`);
-if (seenSections.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的 section 名未隔离`);
+if (seenVars.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的变量名未隔离`);
 
 console.log('\nRESULT:', ok ? 'PASS' : 'FAIL');
 process.exit(ok ? 0 : 1);
