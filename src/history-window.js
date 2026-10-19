@@ -24,6 +24,7 @@
  * · 裁完轮数会掉到 N 上下，必须等到再次超过 N 才会触发 —— 天然限流，不会每轮都调。
  * · 任何失败都被吞掉并跳过本次，**绝不影响正常对话**。
  */
+import { appendFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -140,6 +141,33 @@ export async function compactHistory(ctx, agent, keepTurns = DEFAULT_KEEP_TURNS,
 const inFlight = new WeakSet();
 
 /**
+ * 诊断日志：把每次 idle 的判断过程写进 `<DSH_HOME>/whale-history-window.log`。
+ *
+ * 为什么要写文件：宿主的 `ctx.logger` 只到控制台，用户看不到、我也读不到。
+ * 而这个插件是**静默跳过**式设计（任何异常都吞掉），没有日志就无法区分
+ * 「没收到 idle」「没拿到 compaction 服务」「范围不合格」「compaction 抛错」。
+ */
+function diagPath() {
+  return join(dshHome(), 'whale-history-window.log');
+}
+
+function diag(line) {
+  try {
+    appendFileSync(diagPath(), `${new Date().toISOString()}  ${line}\n`, 'utf8');
+  } catch {
+    // 日志失败绝不能影响任何东西
+  }
+}
+
+/** 该会话当前有多少「真实用户轮」（诊断用）。 */
+function countTurns(session) {
+  const nodes = session?.surface?.nodes ?? [];
+  let n = 0;
+  for (const seq of nodes) if (isUserTurn(session.eventAt(seq))) n++;
+  return n;
+}
+
+/**
  * 挂载：agent 转为空闲时检查轮数，超过 keepTurns 就压缩掉更早的部分。
  *
  * config：
@@ -147,23 +175,66 @@ const inFlight = new WeakSet();
  *   - `keepTurns` 保留最近多少轮（默认 20）
  */
 export function apply(ctx, config = {}) {
-  if (config.enable === false) return;
+  if (config.enable === false) {
+    diag('apply: enable=false，不挂载');
+    return;
+  }
 
   const keepTurns = typeof config.keepTurns === 'number' ? config.keepTurns : DEFAULT_KEEP_TURNS;
-  if (typeof ctx.on !== 'function') return;
+  if (typeof ctx.on !== 'function') {
+    diag('apply: ctx.on 不可用，不挂载');
+    return;
+  }
+
+  // 两个通道都试：Cordis 的服务既可以 ctx.get(name)，也通常是 ctx[name]
+  const serviceVia = () => {
+    if (typeof ctx.get === 'function') {
+      const s = ctx.get('compaction');
+      if (s !== undefined) return { service: s, via: 'ctx.get' };
+    }
+    const s2 = ctx.compaction;
+    if (s2 !== undefined) return { service: s2, via: 'ctx.compaction' };
+    return { service: undefined, via: 'none' };
+  };
+
+  const start = serviceVia();
+  diag(`apply: 已挂载 keepTurns=${keepTurns} 服务=${start.via}`);
 
   ctx.effect(
     () =>
       ctx.on('agent/status', (payload) => {
-        if (payload?.status !== 'idle') return;
+        const status = payload?.status;
         const agent = payload?.agent;
-        if (agent?.session === undefined) return;
-        if (inFlight.has(agent)) return;
+        if (status !== 'idle') {
+          diag(`agent/status=${status}（非 idle，跳过）`);
+          return;
+        }
+        if (agent?.session === undefined) {
+          diag('idle 但 payload.agent.session 缺失');
+          return;
+        }
+        if (inFlight.has(agent)) {
+          diag('idle 但上一次压缩还在跑，跳过');
+          return;
+        }
+        const turns = countTurns(agent.session);
+        const { service, via } = serviceVia();
+        if (service?.compactRegion === undefined) {
+          diag(`idle turns=${turns} 但拿不到 compaction 服务（via=${via}）`);
+          return;
+        }
+        const plan = planCompact(agent.session, keepTurns);
+        if (plan === null) {
+          diag(`idle turns=${turns} 未超过 ${keepTurns}，无需压缩`);
+          return;
+        }
         inFlight.add(agent);
+        diag(`idle turns=${turns} 触发压缩 [${plan.startSeq}, ${plan.endSeq}] 压掉 ${plan.removedTurns} 轮`);
         // 不 await：这是空闲期的后台整理，绝不能拖住/影响对话。
         void Promise.resolve()
-          .then(() => compactHistory(ctx, agent, keepTurns))
-          .catch(() => {})
+          .then(() => service.compactRegion(plan.startSeq, plan.endSeq, agent))
+          .then(() => diag('压缩成功'))
+          .catch((err) => diag(`压缩失败: ${String(err?.message ?? err)}`))
           .finally(() => inFlight.delete(agent));
       }),
     'whale-history-window.idle-compact',
