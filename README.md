@@ -96,6 +96,18 @@ Cannot read properties of undefined (reading 'kind')
 连 `step/start` 都没有，极难定位。所以无论裁剪成功、失败还是跳过，都必须 `return next()`。
 `verify-history-window.mjs` 第 9 组用例复刻了这个 waterfall 语义，并保留了一个「老写法必崩」的反例。
 
+#### ⚠️ 裁剪写的事件必须带合法 `turn`
+
+宿主的会话格式校验（`dsh-session-format-v3-to-v4`）要求 `developer/message` 的 `turn` 是**正整数**。
+写死 `turn: 0` 会抛：
+
+```
+developer/message turn must be positive
+```
+
+所以 `pruneHistory()` 从 `agent/pre-step` 的 payload 里取真实的 `turn` / `step` 透传；
+**拿不到正数 turn 就跳过本次裁剪**（宁可不裁，也不写非法事件）。第 10 组用例覆盖这个分支。
+
 ### 为什么用「提示变量」而不是 section（重要）
 
 `@deepseek-ai/dsh-system-prompt` 的 `assemble()` 末尾有这样一段：

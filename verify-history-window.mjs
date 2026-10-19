@@ -56,6 +56,11 @@ function makeSession(spec) {
       return nodes.filter((n) => !hidden.has(n)).map((n) => events.get(n));
     },
     append(type, data, opts) {
+      // 复刻宿主 dsh-session-format 的校验：developer/message 的 turn 必须为正整数
+      if (type === 'developer/message' && !(Number.isInteger(data?.turn) && data.turn > 0)) {
+        violations.push(`developer/message turn must be positive (实际 turn=${data?.turn})`);
+        throw new Error('developer/message turn must be positive');
+      }
       const op = opts?.surfaceOp;
       if (op?.op === 'replace') {
         // 复刻宿主 assertSourceEventReferences：sourceEventSeqs 必须列全每个被 shadow 的表层节点
@@ -89,7 +94,7 @@ console.log('=== 1. 40 轮 → 只留 20 轮 ===');
   const turns = Array.from({ length: 40 }, (_, i) => i + 1);
   const s = makeSession(turns);
   const before = s._countUsers();
-  const plan = mod.pruneHistory({ session: s }, 20);
+  const plan = mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
   const after = s._countUsers();
   check('裁剪前 40 轮', before === 40, `实际 ${before}`);
   check('裁剪后 20 轮', after === 20, `实际 ${after}`);
@@ -100,7 +105,7 @@ console.log('=== 1. 40 轮 → 只留 20 轮 ===');
 console.log('\n=== 2. 不足 20 轮 → 不动 ===');
 {
   const s = makeSession(Array.from({ length: 8 }, (_, i) => i + 1));
-  const plan = mod.pruneHistory({ session: s }, 20);
+  const plan = mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
   check('返回 null（无需裁剪）', plan === null);
   check('轮数不变（8）', s._countUsers() === 8, `实际 ${s._countUsers()}`);
 }
@@ -108,7 +113,7 @@ console.log('\n=== 2. 不足 20 轮 → 不动 ===');
 console.log('\n=== 3. 系统提示永不被裁 ===');
 {
   const s = makeSession(Array.from({ length: 30 }, (_, i) => i + 1));
-  mod.pruneHistory({ session: s }, 20);
+  mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
   const first = s.surface.nodes[0];
   check('表层第 0 个节点仍是 system/message', s.eventAt(first).type === 'system/message');
 }
@@ -116,7 +121,7 @@ console.log('\n=== 3. 系统提示永不被裁 ===');
 console.log('\n=== 4. 工具配对不被切断 ===');
 {
   const s = makeSession(Array.from({ length: 30 }, (_, i) => i + 1));
-  mod.pruneHistory({ session: s }, 20);
+  mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
   // 裁剪后重新遍历：不应出现孤立的 tool/result
   const nodes = s.surface.nodes;
   let pending = 0;
@@ -137,14 +142,14 @@ console.log('\n=== 4. 工具配对不被切断 ===');
 console.log('\n=== 5. 50 轮保留 20 ===');
 {
   const s = makeSession(Array.from({ length: 50 }, (_, i) => i + 1));
-  mod.pruneHistory({ session: s }, 20);
+  mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
   check('结果 20 轮', s._countUsers() === 20, `实际 ${s._countUsers()}`);
 }
 
 console.log('\n=== 6. 自定义 keepTurns ===');
 {
   const s = makeSession(Array.from({ length: 30 }, (_, i) => i + 1));
-  mod.pruneHistory({ session: s }, 5);
+  mod.pruneHistory({ session: s }, 5, { turn: 1, step: 1 });
   // 提示条走 developer/message，不占 user 名额 → 正好 5
   check('保留 5 轮（提示条不占名额）', s._countUsers() === 5, `实际 ${s._countUsers()}`);
   const hasDev = s.surface.nodes.some((n) => s.eventAt(n).type === 'developer/message');
@@ -194,13 +199,13 @@ console.log('\n=== 9. waterfall 必须被放行（回归：曾导致 decision.ki
   // 造一个「无需裁剪」的会话：监听器仍然必须放行
   const small = makeSession(Array.from({ length: 3 }, (_, i) => i + 1));
   const innerDecision = { kind: 'enter', messages: [] };
-  const got = await waterfall([listener], [{ agent: { session: small } }], () => innerDecision);
+  const got = await waterfall([listener], [{ agent: { session: small }, turn: 1, step: 1 }], () => innerDecision);
   check('waterfall 返回值不是 undefined', got !== undefined, `实际 ${String(got)}`);
   check('waterfall 返回内层 decision（kind=enter）', got?.kind === 'enter', `实际 kind=${got?.kind}`);
   // 关键反例：老实现（不接 next、返回 undefined）会让这里读到 undefined.kind
   let oldCrash = false;
   try {
-    const oldGot = await waterfall([async () => {}], [{ agent: { session: small } }], () => innerDecision);
+    const oldGot = await waterfall([async () => {}], [{ agent: { session: small }, turn: 1, step: 1 }], () => innerDecision);
     void oldGot.kind;
   } catch (e) {
     oldCrash = String(e.message).includes("reading 'kind'");
@@ -209,16 +214,36 @@ console.log('\n=== 9. waterfall 必须被放行（回归：曾导致 decision.ki
 
   // 需要裁剪时也必须放行
   const big = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
-  const got2 = await waterfall([listener], [{ agent: { session: big } }], () => innerDecision);
+  const got2 = await waterfall([listener], [{ agent: { session: big }, turn: 7, step: 1 }], () => innerDecision);
   check('需要裁剪时仍返回 decision', got2?.kind === 'enter');
   check('需要裁剪时确实裁了（20 轮）', big._countUsers() === 20, `实际 ${big._countUsers()}`);
   check('裁剪没有触发宿主 sourceEventSeqs 校验错误', big._violations.length === 0, big._violations.join(' | '));
+  check('没有触发 turn 必须为正数的校验', big._violations.length === 0, big._violations.join(' | '));
 
   // 裁剪抛错也不能拖垮 waterfall
   const broken = { surface: { get nodes() { throw new Error('boom'); } }, eventAt: () => undefined };
-  const got3 = await waterfall([listener], [{ agent: { session: broken } }], () => innerDecision);
+  const got3 = await waterfall([listener], [{ agent: { session: broken }, turn: 2, step: 1 }], () => innerDecision);
   check('裁剪内部抛错时仍返回 decision', got3?.kind === 'enter');
 }
 
-console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，且 waterfall 被正确放行' : 'FAIL');
+console.log('\n=== 10. 拿不到合法 turn 时跳过裁剪（不许写非法事件）===');
+{
+  // 宿主 dsh-session-format 要求 developer/message 的 turn 为正整数。
+  // 老代码写死 turn:0，会抛 `developer/message turn must be positive` 并拖垮整回合。
+  const s = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
+  const before = s._countUsers();
+  for (const position of [{}, { turn: 0, step: 1 }, { turn: -3, step: 1 }, { turn: 1.5, step: 1 }, undefined]) {
+    const plan = mod.pruneHistory({ session: s }, 20, position);
+    check(`position=${JSON.stringify(position)} → 返回 null`, plan === null);
+  }
+  check('20 轮没被裁（因为 skipped）', s._countUsers() === before, `实际 ${s._countUsers()}`);
+  check('没有写任何非法 developer/message', s._violations.length === 0, s._violations.join(' | '));
+
+  // 传了合法 turn 就能正常裁
+  const ok2 = mod.pruneHistory({ session: s }, 20, { turn: 1, step: 1 });
+  check('给了合法 turn 后正常裁剪', ok2 !== null && s._countUsers() === 20, `实际 ${s._countUsers()}`);
+  check('裁剪全程无校验错误', s._violations.length === 0, s._violations.join(' | '));
+}
+
+console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，waterfall 被放行，且 turn 合法' : 'FAIL');
 process.exit(ok ? 0 : 1);

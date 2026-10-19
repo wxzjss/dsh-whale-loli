@@ -137,10 +137,23 @@ export function shadowedNodes(session, startSeq, endSeq) {
   return nodes.filter((seq) => seq >= startSeq && seq <= endSeq);
 }
 
-/** 执行裁剪。返回计划；无需裁剪返回 null。 */
-export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
+/**
+ * 执行裁剪。返回计划；无需裁剪（或拿不到合法 position）返回 null。
+ *
+ * `position` = `{ turn, step }`，直接来自 `agent/pre-step` 的 payload。
+ * **必须传真实 turn**：宿主 `dsh-session-format-v3-to-v4` 的校验器要求
+ * `developer/message` 的 `turn` 为正整数，写死 0 会抛
+ *   `developer/message turn must be positive`
+ * 拿不到正数 turn 就跳过这一轮（宁可不裁，也不写非法事件）。
+ */
+export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS, position = {}) {
   const session = agent?.session;
   if (session === undefined) return null;
+
+  const turn = Number.isInteger(position?.turn) && position.turn > 0 ? position.turn : null;
+  if (turn === null) return null;
+  const step = Number.isInteger(position?.step) && position.step > 0 ? position.step : 1;
+
   const plan = planPrune(session, keepTurns);
   if (plan === null) return null;
 
@@ -150,8 +163,8 @@ export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
   session.append(
     'developer/message',
     {
-      turn: 0,
-      step: 0,
+      turn,
+      step,
       message: {
         role: 'developer',
         content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
@@ -196,13 +209,16 @@ export function apply(ctx, config = {}) {
 
   const keepTurns = typeof config.keepTurns === 'number' ? config.keepTurns : DEFAULT_KEEP_TURNS;
 
-  // agent/pre-step 在派生历史之前运行，且拿得到本 agent。
+  // agent/pre-step 在派生历史之前运行，且拿得到本 agent 与当前 turn/step。
   ctx.effect(
     () =>
       ctx.on('agent/pre-step', async (payload, next) => {
         try {
           const agent = payload?.agent ?? payload?.handle?.agent;
-          if (agent?.session !== undefined) pruneHistory(agent, keepTurns);
+          if (agent?.session !== undefined) {
+            // turn/step 必须原样透传给 pruneHistory：宿主校验器要求 turn 为正整数。
+            pruneHistory(agent, keepTurns, { turn: payload?.turn, step: payload?.step });
+          }
         } catch {
           // 裁剪失败绝不影响正常对话
         }
