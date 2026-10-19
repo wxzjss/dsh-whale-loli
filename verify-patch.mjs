@@ -175,15 +175,19 @@ for (const want of EXPECTED) {
   }
   if (prefix.includes('{{whale_memory') === false) fail('人设里没有任何记忆变量引用');
 
-  // 历史窗口：**必须不挂**。
-  // 宿主 dsh-session-format-v3-to-v4 的校验会拒收我们写的替换事件，
-  // 一旦被拒就是整回合失败，所以改成纯提示层约束。
+  // 历史窗口：必须挂上，且默认开启。
+  // 它不再自己写事件，而是调宿主的 ctx.compaction.compactRegion()，
+  // 由宿主摘要 + 写事件 + 自己校验（自己拼事件形状曾连崩四次）。
   const win = cfg.plugins.find((p) => p.id === 'whale-history-window');
-  if (win) {
-    fail('不应再挂 whale-history-window（写事件会被宿主校验拒收、拖垮整回合）');
+  if (!win) {
+    fail('缺少 whale-history-window 行（20 轮以外就不会被压掉了）');
+  } else {
+    if (win.name !== 'dsh-whale-loli/history-window') fail('历史窗口 name 应为 dsh-whale-loli/history-window');
+    if (win.config.enable !== true) fail('历史窗口应默认开启（enable: true）');
+    if (win.config.keepTurns !== 20) fail(`keepTurns 应为 20，实为 ${win.config.keepTurns}`);
   }
 
-  // 提示层约束必须在人设里（替代真正的裁剪）
+  // 提示层约束仍然保留：压缩是异步的，压缩还没跑之前靠它兜住行为
   const layerRules = ['不被动', '可以主动去找', '默认当它不存在'];
   for (const rule of layerRules) {
     if (!prefix.includes(rule)) fail(`人设缺少提示层约束：${rule}`);

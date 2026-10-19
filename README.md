@@ -70,6 +70,22 @@ session.append('developer/message', 提示条, {
 
 挂载点为 `agent/pre-step`：循环在**派生历史之前**运行它，是唯一既在请求前、又拿得到本 agent 的时机。
 
+#### 现在的做法：交给宿主压缩，不自己写事件
+
+> **历史改动**：曾经用 `session.append(...)` + `surfaceOp: replace` 自己做纯删除，连崩四次
+> （`turn must be positive` → `requires id, role, content, and a producer-owned source` …），
+> 因为 `dsh-session-format-v3-to-v4` 对事件形状的要求极严，**少一项就是整个回合失败**。
+
+现在改为调用宿主自己的压缩服务：
+
+```js
+ctx.compaction.compactRegion(start, end, agent)   // 切点由我们算，摘要/写事件/校验由宿主做
+```
+
+- 触发时机：`agent/status === 'idle'`（压缩服务拒绝 active 会话），且**不 await**，绝不拖住对话。
+- 结果：`[start, end]` 这段旧节点被替换成**一条摘要**，原始旧消息不再计入输入。
+- 天然限流：裁完轮数掉回 20，要再长到超过 20 才会触发，不会每轮都调摘要。
+- 失败只跳过本次，`try/catch` + `.catch(() => {})` 双保险，绝不影响对话。
 #### ⚠️ `agent/pre-step` 是 waterfall，必须 `return next()`
 
 Cordis 的实现是这样的：
