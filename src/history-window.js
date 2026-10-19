@@ -31,8 +31,16 @@ import { join } from 'node:path';
 /** Cordis 插件名。 */
 export const name = 'whale-history-window';
 
-/** 需要会话表（用来拿 agent.session）。 */
-export const inject = ['sessions'];
+/**
+ * **不要求任何注入**。
+ *
+ * 曾经写 `inject = ['sessions']`，结果整个插件在预设作用域里可能一直不激活
+ * （`apply` 压根不跑，表现就是「记忆注入正常、但裁剪完全没反应」）。
+ * 而本插件其实什么都不需要：
+ *   · agent / session 从 `agent/status` 的 payload 里拿
+ *   · compaction 服务用 `ctx.get('compaction')` 惰性取，取不到就跳过
+ */
+export const inject = [];
 
 /** 默认保留轮数。 */
 export const DEFAULT_KEEP_TURNS = 20;
