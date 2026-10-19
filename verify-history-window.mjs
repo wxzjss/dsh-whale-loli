@@ -112,7 +112,7 @@ console.log('\n=== 5. 交给宿主 compactRegion，自己不写事件 ===');
   const s = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
   const calls = [];
   const ctx = {
-    get: (k) => (k === 'compaction' ? { compactRegion: async (start, end, agent) => void calls.push({ start, end, agent }) } : undefined),
+    compaction: { compactRegion: async (start, end, agent) => void calls.push({ start, end, agent }) },
     on: () => () => {},
     effect: (f) => f(),
   };
@@ -128,11 +128,11 @@ console.log('\n=== 5. 交给宿主 compactRegion，自己不写事件 ===');
 console.log('\n=== 6. 缺压缩服务 / 抛错 / 无需压缩 ===');
 {
   const s = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
-  const noService = { get: () => undefined, on: () => () => {}, effect: (f) => f() };
+  const noService = { on: () => () => {}, effect: (f) => f() };
   check('没有 compaction 服务 → null', (await mod.compactHistory(noService, { session: s }, 20)) === null);
 
   const boom = {
-    get: () => ({ compactRegion: async () => { throw new Error('boom'); } }),
+    compaction: { compactRegion: async () => { throw new Error('boom'); } },
     on: () => () => {},
     effect: (f) => f(),
   };
@@ -146,7 +146,7 @@ console.log('\n=== 6. 缺压缩服务 / 抛错 / 无需压缩 ===');
 
   const small = makeSession(Array.from({ length: 5 }, (_, i) => i + 1));
   const calls = [];
-  const ctx2 = { get: () => ({ compactRegion: async () => void calls.push(1) }), on: () => () => {}, effect: (f) => f() };
+  const ctx2 = { compaction: { compactRegion: async () => void calls.push(1) }, on: () => () => {}, effect: (f) => f() };
   check('不足 20 轮 → null', (await mod.compactHistory(ctx2, { session: small }, 20)) === null);
   check('不足 20 轮 → 不调压缩', calls.length === 0);
 }
@@ -155,7 +155,7 @@ console.log('\n=== 7. 挂载行为：默认开启、只在 idle、不阻塞 ==='
 {
   let listener;
   const ctxMock = {
-    get: () => undefined,
+    compaction: { compactRegion: async () => {} },
     effect: (f) => f(),
     on: (_name, cb) => {
       listener = cb;
@@ -177,7 +177,7 @@ console.log('\n=== 7. 挂载行为：默认开启、只在 idle、不阻塞 ==='
   const s = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
   const calls = [];
   const ctx3 = {
-    get: (k) => (k === 'compaction' ? { compactRegion: async (a, b) => void calls.push([a, b]) } : undefined),
+    compaction: { compactRegion: async (a, b) => void calls.push([a, b]) },
     effect: (f) => f(),
     on: (_n, cb) => {
       listener = cb;

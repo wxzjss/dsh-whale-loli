@@ -34,13 +34,21 @@ export const name = 'whale-history-window';
 /**
  * **不要求任何注入**。
  *
- * 曾经写 `inject = ['sessions']`，结果整个插件在预设作用域里可能一直不激活
- * （`apply` 压根不跑，表现就是「记忆注入正常、但裁剪完全没反应」）。
- * 而本插件其实什么都不需要：
- *   · agent / session 从 `agent/status` 的 payload 里拿
- *   · compaction 服务用 `ctx.get('compaction')` 惰性取，取不到就跳过
+ * **必须声明 `inject = ['compaction']`。**
+ *
+ * Cordis 的服务是注入制的：**没在 inject 里声明的服务，连读属性都非法** ——
+ * 会抛 `cannot get property "compaction" without inject (gateway/internal)`，
+ * 而且是在插件加载时就抛，直接把会话 resume 也带崩。
+ *
+ * 踩过的两个反面：
+ *   1. `inject = ['sessions']` —— 只声明了 sessions，读 `ctx.compaction` 非法，
+ *      异常又被内部 catch 吞掉，表现为「记忆正常、裁剪死寂」。
+ *   2. `inject = []` —— 连 sessions 都不声明，`apply` 里一探服务就抛，整插件加载失败。
+ *
+ * 所以：**要读哪个服务，就把它写进 inject**。本插件只读 compaction。
+ * agent / session 不需要注入（从 `agent/status` 的 payload 里拿）。
  */
-export const inject = [];
+export const inject = ['compaction'];
 
 /** 默认保留轮数。 */
 export const DEFAULT_KEEP_TURNS = 20;
@@ -135,7 +143,9 @@ export async function compactHistory(ctx, agent, keepTurns = DEFAULT_KEEP_TURNS,
   const session = agent?.session;
   if (session === undefined) return null;
 
-  const compaction = ctx.get?.('compaction') ?? ctx.compaction;
+  // 必须直接读属性（inject 已声明），不要用 ctx.get —— Cordis 对未注入服务
+  // 的属性访问会直接抛 `cannot get property "compaction" without inject`。
+  const compaction = ctx?.compaction;
   if (compaction?.compactRegion === undefined) return null;
 
   const plan = planCompact(session, keepTurns);
@@ -194,19 +204,17 @@ export function apply(ctx, config = {}) {
     return;
   }
 
-  // 两个通道都试：Cordis 的服务既可以 ctx.get(name)，也通常是 ctx[name]
-  const serviceVia = () => {
-    if (typeof ctx.get === 'function') {
-      const s = ctx.get('compaction');
-      if (s !== undefined) return { service: s, via: 'ctx.get' };
-    }
-    const s2 = ctx.compaction;
-    if (s2 !== undefined) return { service: s2, via: 'ctx.compaction' };
-    return { service: undefined, via: 'none' };
-  };
-
-  const start = serviceVia();
-  diag(`apply: 已挂载 keepTurns=${keepTurns} 服务=${start.via}`);
+  // inject 已声明 compaction，这里可以安全读取；但仍包一层，
+  // 万一宿主版本差异导致服务缺失，也只是跳过而不是把会话 resume 弄挂。
+  let compaction;
+  try {
+    compaction = ctx.compaction;
+  } catch (err) {
+    diag(`apply: 读 ctx.compaction 抛错（${String(err?.message ?? err)}），不挂载`);
+    return;
+  }
+  diag(`apply: 已挂载 keepTurns=${keepTurns} 服务=${compaction ? 'ok' : 'missing'}`);
+  if (compaction?.compactRegion === undefined) return;
 
   ctx.effect(
     () =>
@@ -226,11 +234,6 @@ export function apply(ctx, config = {}) {
           return;
         }
         const turns = countTurns(agent.session);
-        const { service, via } = serviceVia();
-        if (service?.compactRegion === undefined) {
-          diag(`idle turns=${turns} 但拿不到 compaction 服务（via=${via}）`);
-          return;
-        }
         const plan = planCompact(agent.session, keepTurns);
         if (plan === null) {
           diag(`idle turns=${turns} 未超过 ${keepTurns}，无需压缩`);
@@ -240,7 +243,7 @@ export function apply(ctx, config = {}) {
         diag(`idle turns=${turns} 触发压缩 [${plan.startSeq}, ${plan.endSeq}] 压掉 ${plan.removedTurns} 轮`);
         // 不 await：这是空闲期的后台整理，绝不能拖住/影响对话。
         void Promise.resolve()
-          .then(() => service.compactRegion(plan.startSeq, plan.endSeq, agent))
+          .then(() => compaction.compactRegion(plan.startSeq, plan.endSeq, agent))
           .then(() => diag('压缩成功'))
           .catch((err) => diag(`压缩失败: ${String(err?.message ?? err)}`))
           .finally(() => inFlight.delete(agent));
