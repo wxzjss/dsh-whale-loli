@@ -1,7 +1,7 @@
 {
   "name": "dsh-whale-loli",
-  "version": "0.5.0",
-  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆 + 真正生效的 20 轮历史窗口。记忆分「固定记忆」（永久保留）/「滚动摘要」（每轮都记，最多 80 条 FIFO）/「最近详细区」/「归档索引」四区，经提示变量注入（persona 为 complete:true，独立 section 会被宿主丢弃）；history-window 用宿主表层替换真的裁掉 20 轮以前的历史，不调 LLM、不切断工具配对。",
+  "version": "0.5.1",
+  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆 + 真正生效的 20 轮历史窗口。记忆分「固定记忆」（永久保留）/「滚动摘要」（每轮都记，最多 80 条 FIFO）/「最近详细区」/「归档索引」四区，经提示变量注入（persona 为 complete:true，独立 section 会被宿主丢弃）；history-window 用宿主表层替换真的裁掉 20 轮以前的历史，不调 LLM、不切断工具配对，并正确放行 agent/pre-step 的 waterfall。",
   "type": "module",
   "license": "MIT",
   "keywords": [

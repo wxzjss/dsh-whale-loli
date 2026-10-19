@@ -124,12 +124,28 @@ export function planPrune(session, keepTurns = DEFAULT_KEEP_TURNS) {
   };
 }
 
+/**
+ * 收集被替换范围覆盖的**当前表层节点**。
+ *
+ * 宿主的 `assertSourceEventReferences` 硬性要求：`sourceEventSeqs` 必须列全每一个
+ * 被 shadow 的表层节点，否则抛
+ *   `surface replace: sourceEventSeqs must include every shadowed surface node; missing …`
+ * 漏了这个参数 = 每次裁剪都失败（错误又被 try/catch 吞掉，表现为「裁剪从来没生效」）。
+ */
+export function shadowedNodes(session, startSeq, endSeq) {
+  const nodes = session?.surface?.nodes ?? [];
+  return nodes.filter((seq) => seq >= startSeq && seq <= endSeq);
+}
+
 /** 执行裁剪。返回计划；无需裁剪返回 null。 */
 export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
   const session = agent?.session;
   if (session === undefined) return null;
   const plan = planPrune(session, keepTurns);
   if (plan === null) return null;
+
+  const shadowed = shadowedNodes(session, plan.startSeq, plan.endSeq);
+  if (shadowed.length === 0) return null;
 
   session.append(
     'developer/message',
@@ -141,13 +157,35 @@ export function pruneHistory(agent, keepTurns = DEFAULT_KEEP_TURNS) {
         content: [{ type: 'text', text: noticeText(plan.removedTurns, plan.keptTurns) }],
       },
     },
-    { surfaceOp: { op: 'replace', startSeq: plan.startSeq, endSeq: plan.endSeq } },
+    {
+      surfaceOp: { op: 'replace', startSeq: plan.startSeq, endSeq: plan.endSeq },
+      sourceEventSeqs: shadowed,
+    },
   );
   return plan;
 }
 
 /**
  * 挂载：每个步骤派生历史之前检查并裁剪。
+ *
+ * ⚠️ `agent/pre-step` 是 Cordis 的 **waterfall**。宿主实现：
+ *
+ *     waterfall(...args) {
+ *       const cbs = this.dispatch("waterfall", args)
+ *       const inner = args.pop()
+ *       const next = () => (cbs.shift() ?? inner)(...args)
+ *       args.push(next)
+ *       return next()
+ *     }
+ *
+ * 也就是说：**不调用 `next()` 的监听器会否决整条链**，并把它自己的返回值当作最终结果。
+ * 曾经这里写成 `async (payload) => { …裁剪… }`（不接 next、返回 undefined），结果
+ * `agent/pre-step` 的 decision 变成 undefined，agent-loop 里 `decision.kind` 直接抛
+ *   `Cannot read properties of undefined (reading 'kind')`
+ * —— 整个回合在 step 之前就崩掉，而且没有任何 step/start 事件，极难定位。
+ *
+ * 所以：无论裁剪成功、失败还是被跳过，**必须 `return next()`**，把下游的行为（默认的
+ * `{kind:'enter'}` 以及 compaction 等其它监听器）原样放行。
  *
  * config：
  *   - `enable`    置 true 才真的裁（默认 false —— 改写历史是强动作）
@@ -161,14 +199,15 @@ export function apply(ctx, config = {}) {
   // agent/pre-step 在派生历史之前运行，且拿得到本 agent。
   ctx.effect(
     () =>
-      ctx.on('agent/pre-step', async (payload) => {
-        const agent = payload?.agent ?? payload?.handle?.agent ?? ctx.get('agents')?.currentInitiator();
-        if (agent?.session === undefined) return;
+      ctx.on('agent/pre-step', async (payload, next) => {
         try {
-          pruneHistory(agent, keepTurns);
+          const agent = payload?.agent ?? payload?.handle?.agent;
+          if (agent?.session !== undefined) pruneHistory(agent, keepTurns);
         } catch {
           // 裁剪失败绝不影响正常对话
         }
+        // 必须放行 waterfall：绝不吞掉 decision，否则下游读 decision.kind 会崩。
+        return next();
       }),
     'whale-history-window.pre-step',
   );

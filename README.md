@@ -67,6 +67,32 @@ session.append('developer/message', 提示条, {
 
 挂载点为 `agent/pre-step`：循环在**派生历史之前**运行它，是唯一既在请求前、又拿得到本 agent 的时机。
 
+#### ⚠️ `agent/pre-step` 是 waterfall，必须 `return next()`
+
+Cordis 的实现是这样的：
+
+```js
+waterfall (...args) {
+  const cbs = this.dispatch('waterfall', args)
+  const inner = args.pop()
+  const next = () => (cbs.shift() ?? inner)(...args)
+  args.push(next)
+  return next()
+}
+```
+
+**不调用 `next()` 的监听器会否决整条链**，并把自己的返回值当成最终结果。
+本插件曾经写成 `async (payload) => { …裁剪… }`（不接 `next`、返回 `undefined`），于是
+`agent/pre-step` 的 decision 变成 `undefined`，agent-loop 里 `decision.kind` 直接炸：
+
+```
+Cannot read properties of undefined (reading 'kind')
+```
+
+表现是**整个回合在第一个 step 之前就失败**，会话日志里只有 `turn/start` → `turn/end(error)`，
+连 `step/start` 都没有，极难定位。所以无论裁剪成功、失败还是跳过，都必须 `return next()`。
+`verify-history-window.mjs` 第 9 组用例复刻了这个 waterfall 语义，并保留了一个「老写法必崩」的反例。
+
 ### 为什么用「提示变量」而不是 section（重要）
 
 `@deepseek-ai/dsh-system-prompt` 的 `assemble()` 末尾有这样一段：

@@ -46,6 +46,7 @@ function makeSession(spec) {
   const surface = { nodes };
   // replace 之后节点消失：测试里用一个可变集合模拟
   const hidden = new Set();
+  const violations = [];
   return {
     get surface() {
       return { nodes: nodes.filter((n) => !hidden.has(n)) };
@@ -57,8 +58,14 @@ function makeSession(spec) {
     append(type, data, opts) {
       const op = opts?.surfaceOp;
       if (op?.op === 'replace') {
-        for (let i = 0; i < nodes.length; i++) {
-          if (nodes[i] >= op.startSeq && nodes[i] <= op.endSeq) hidden.add(nodes[i]);
+        // 复刻宿主 assertSourceEventReferences：sourceEventSeqs 必须列全每个被 shadow 的表层节点
+        const expected = nodes.filter((n) => !hidden.has(n) && n >= op.startSeq && n <= op.endSeq);
+        const given = Array.isArray(opts.sourceEventSeqs) ? opts.sourceEventSeqs : [];
+        const missing = expected.filter((n) => !given.includes(n));
+        if (missing.length > 0) violations.push(`surface replace: sourceEventSeqs 缺 ${missing.join(',')}`);
+        if (new Set(given).size !== given.length) violations.push('sourceEventSeqs 有重复');
+        for (const n of nodes) {
+          if (n >= op.startSeq && n <= op.endSeq) hidden.add(n);
         }
       }
       const s = seq + 1;
@@ -67,6 +74,7 @@ function makeSession(spec) {
       nodes.push(s);
       return events.get(s);
     },
+    _violations: violations,
     _countUsers() {
       return nodes.filter((n) => !hidden.has(n)).filter((n) => events.get(n).type === 'user/message').length;
     },
@@ -158,7 +166,59 @@ console.log('\n=== 8. 源码不含「只靠人设文字」的假实现 ===');
   check('使用 surfaceOp replace', src.includes("op: 'replace'"));
   check('挂在 agent/pre-step（派生历史前）', src.includes('agent/pre-step'));
   check('包含工具配对平衡判定', src.includes('balancedBefore'));
+  check('替换事件带 sourceEventSeqs', src.includes('sourceEventSeqs'));
 }
 
-console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮' : 'FAIL');
+console.log('\n=== 9. waterfall 必须被放行（回归：曾导致 decision.kind 崩溃）===');
+{
+  // 复刻 @deepseek-ai/cordis 的 waterfall 实现：
+  //   不调用 next() 的监听器会否决整条链，并把它自己的返回值当作最终结果。
+  function waterfall(listeners, args, inner) {
+    const cbs = [...listeners];
+    const a = [...args];
+    const next = () => (cbs.shift() ?? inner)(...a);
+    a.push(next);
+    return next();
+  }
+
+  // 抓取 apply 注册的监听器
+  let listener;
+  const mockCtx = {
+    on: (_name, cb) => ((listener = cb), () => {}),
+    effect: (f) => f(),
+    get: () => undefined,
+  };
+  mod.apply(mockCtx, { enable: true, keepTurns: 20 });
+  check('注册了 pre-step 监听器', typeof listener === 'function');
+
+  // 造一个「无需裁剪」的会话：监听器仍然必须放行
+  const small = makeSession(Array.from({ length: 3 }, (_, i) => i + 1));
+  const innerDecision = { kind: 'enter', messages: [] };
+  const got = await waterfall([listener], [{ agent: { session: small } }], () => innerDecision);
+  check('waterfall 返回值不是 undefined', got !== undefined, `实际 ${String(got)}`);
+  check('waterfall 返回内层 decision（kind=enter）', got?.kind === 'enter', `实际 kind=${got?.kind}`);
+  // 关键反例：老实现（不接 next、返回 undefined）会让这里读到 undefined.kind
+  let oldCrash = false;
+  try {
+    const oldGot = await waterfall([async () => {}], [{ agent: { session: small } }], () => innerDecision);
+    void oldGot.kind;
+  } catch (e) {
+    oldCrash = String(e.message).includes("reading 'kind'");
+  }
+  check('反例：不调用 next 的老写法确实崩在 reading kind', oldCrash);
+
+  // 需要裁剪时也必须放行
+  const big = makeSession(Array.from({ length: 40 }, (_, i) => i + 1));
+  const got2 = await waterfall([listener], [{ agent: { session: big } }], () => innerDecision);
+  check('需要裁剪时仍返回 decision', got2?.kind === 'enter');
+  check('需要裁剪时确实裁了（20 轮）', big._countUsers() === 20, `实际 ${big._countUsers()}`);
+  check('裁剪没有触发宿主 sourceEventSeqs 校验错误', big._violations.length === 0, big._violations.join(' | '));
+
+  // 裁剪抛错也不能拖垮 waterfall
+  const broken = { surface: { get nodes() { throw new Error('boom'); } }, eventAt: () => undefined };
+  const got3 = await waterfall([listener], [{ agent: { session: broken } }], () => innerDecision);
+  check('裁剪内部抛错时仍返回 decision', got3?.kind === 'enter');
+}
+
+console.log('\nRESULT:', ok ? 'PASS —— 历史真的裁到最近 N 轮，且 waterfall 被正确放行' : 'FAIL');
 process.exit(ok ? 0 : 1);
