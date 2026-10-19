@@ -25,7 +25,10 @@
 - **每轮都记**：不是挑着记。短对话直接记；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
 - **80 条上限只算「滚动摘要」**：`# 固定记忆` 不占这个名额。
 - **想长期留的就往上挪**：某条滚动摘要以后还用得上，就总结一句写进 `# 固定记忆`；否则到点会滚出去（并归档）。
-- 上限有两道保险：注入时只取最近 80 条（文件里堆再多也只进 80 条）；`appendRolling()` / `pruneMemoryFile()` 可把文件本身裁到 80 条并自动归档。
+- 上限有两道保险：注入时只取最近 80 条（文件里堆再多也只进 80 条）；**每轮结束（agent 转 idle）时自动**把文件本身裁到 80 条，超出的写进 `archive/<预设名>/`。
+  - 为什么放在 idle 而不是组装时：组装是热路径、每次都要跑，在那里写盘既慢又容易和 agent 正在编辑的文件打架。
+  - 不足 80 条时**完全不动文件**（不产生无谓写盘）。
+- **记忆文件还是空的时候也会注入一段带绝对路径的提示**：否则新预设开局拿到一片空白，agent 连该往哪个文件写都不知道。
 - 总长顶到 `maxChars`（16000）时，**先丢最旧的滚动摘要，再丢详细区**，固定记忆最后才动。
 
 ### 每轮先看什么
@@ -213,6 +216,7 @@ dsh-whale-loli/
 ├── verify-memory-injection.mjs # 证明变量通道有效、section 通道被丢弃
 ├── verify-memory-isolation.mjs # 实测三个记忆文件不串
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
+├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，三预设互不覆盖）
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -235,6 +239,7 @@ node verify-history-window.mjs             # 真的裁到最近 N 轮（不切�
 node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
 node verify-memory-isolation.mjs           # 记忆文件端到端隔离（三个预设）
 node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档
+node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、三预设隔离）
 node smoke-memory.mjs                      # 记忆变量冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查

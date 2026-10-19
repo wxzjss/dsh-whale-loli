@@ -47,7 +47,10 @@ check('provider 是函数（每次组装重读盘）', typeof vars.get('whale_me
 const read = () => vars.get('whale_memory')();
 
 console.log('\n=== 读盘行为 ===');
-check('文件不存在 → 空串', read() === '');
+// 文件不存在时不再返回空串：必须给出绝对路径，否则新预设开局不知道往哪写
+const missing = read();
+check('文件不存在 → 仍给出横幅与路径', missing.includes('【鲸鱼记忆 · whale-loli.md】') && missing.includes('文件：'));
+check('文件不存在 → 明说是空的', missing.includes('空'));
 
 writeFileSync(P, `# 头\n\n# 固定记忆（不自动删除）\n\n## 关键事实（已验证）\n\n- 主人喜欢夜宵\n\n# 滚动摘要（最多80条，FIFO）\n\n- R0001 [t] 摘要：聊到夜宵\n\n# 最近详细区\n\n# 归档索引\n`, 'utf8');
 const out = read();
@@ -61,9 +64,12 @@ console.log('\n=== 改文件立即生效（不用重载宿主）===');
 writeFileSync(P, `# 头\n\n# 固定记忆（不自动删除）\n\n## 待办\n\n- 新加的一条待办\n`, 'utf8');
 check('重新读即见新内容', read().includes('新加的一条待办'));
 
-console.log('\n=== 只有骨架 → 不占提示位 ===');
+console.log('\n=== 只有骨架 → 只给路径提示，不塞假内容 ===');
 writeFileSync(P, mod.memoryTemplate('whale-loli.md'), 'utf8');
-check('骨架不注入', read() === '');
+const skeleton = read();
+check('骨架仍给路径', skeleton.includes('文件：'));
+check('骨架不塞假内容', !skeleton.includes('主人喜欢夜宵'));
+check('骨架不含空小节标题', !skeleton.includes('## 任务目标\n\n\n'));
 
 console.log('\n=== emitSection:true 才额外注册 section ===');
 const vars2 = new Map();

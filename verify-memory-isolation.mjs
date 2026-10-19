@@ -105,7 +105,9 @@ for (const [i, c] of CASES.entries()) {
 
 // 只删一个文件，另外两个照常
 rmSync(join(home, CASES[2].file));
-check(`删掉 ${CASES[2].file} 后该变量为空`, scopes[2].vars.get(CASES[2].variableName)() === '');
+const gone = scopes[2].vars.get(CASES[2].variableName)();
+check(`删掉 ${CASES[2].file} 后仍指向自己的路径`, gone.includes(CASES[2].file));
+check(`删掉 ${CASES[2].file} 后不泄漏别人的内容`, !gone.includes(CASES[0].tag) && !gone.includes(CASES[1].tag));
 check(
   '删掉一个文件后另外两个仍正常',
   scopes[0].vars.get(CASES[0].variableName)().includes(CASES[0].tag) &&

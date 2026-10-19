@@ -547,20 +547,58 @@ export function apply(ctx, config = {}) {
 
   /**
    * 每次都重新读盘：改完文件下一个模型步就生效，不用重载宿主。
-   * 注意必须返回字符串 —— 变量为空串时 interpolate 会把它替换成空，不会报错。
+   *
+   * 注意两点：
+   * 1. 必须返回**字符串** —— 变量值为空串时 interpolate 只是替换成空，不会报错。
+   * 2. **文件空（或不存在）时也要给出绝对路径**。否则新预设开局记忆是空骨架，
+   *    agent 拿到的是一段空白，连该往哪个文件写都不知道（只能靠猜 ~/.dsh/…）。
+   *    所以空文件回一段带路径的提示，注入标记也照样出现，便于审计。
    */
   const read = () => {
+    const path = memoryPath(file);
     try {
       const { text } = composeMemory(file, { maxChars, turnLimit, detailLimit });
-      if (!text) return '';
-      return `【鲸鱼记忆 · ${file}】\n文件：${memoryPath(file)}\n\n${text}`;
-    } catch {
-      return '';
+      if (!text) {
+        return [
+          `【鲸鱼记忆 · ${file}】`,
+          `文件：${path}`,
+          '（现在还是空的 —— 想到什么就直接写进这个文件；只写这一个，别动别的预设的记忆。）',
+        ].join('\n');
+      }
+      return `【鲸鱼记忆 · ${file}】\n文件：${path}\n\n${text}`;
+    } catch (err) {
+      // 读失败也要让 agent 知道路径，而不是默默变成空串
+      return [`【鲸鱼记忆 · ${file}】`, `文件：${path}`, `（这次没读出来：${String(err?.message ?? err)}）`].join('\n');
     }
   };
 
   // 主通道：变量。人设 prefix 里写 {{variableName}}，随 complete section 一起进提示。
   ctx.effect(() => ctx.systemPrompt.variable(variableName, read), `whale-memory.variable(${variableName})`);
+
+  /**
+   * 每轮结束（agent 转为 idle）时，把超出 turnLimit 的滚动条目**归档并瘦身文件**。
+   *
+   * 为什么放这里而不是 `read()`：`read()` 是组装热路径（每次组装都会跑），
+   * 在那里写盘既慢又容易和 agent 自己的编辑打架 —— `pruneMemoryFile` 的注释里
+   * 也写明了「组装热路径不会调用」。而 idle 一轮只发生一次，时机正好。
+   *
+   * 不这么做的话：注入会按 turnLimit 截断（只喂最新 80 条），但文件本身无限增长，
+   * `archive/` 目录永远空着 —— 与「超过 80 条就不断覆盖」的约定不符。
+   */
+  ctx.effect(
+    () =>
+      typeof ctx.on === 'function' &&
+      ctx.on('agent/status', ({ status }) => {
+        if (status !== 'idle') return;
+        try {
+          const { totalRoll } = composeMemory(file, { maxChars, turnLimit, detailLimit });
+          if (totalRoll > turnLimit) pruneMemoryFile(file, turnLimit, { detailLimit });
+        } catch {
+          // 整理失败不影响对话
+        }
+      }),
+    `whale-memory.trim(${file})`,
+  );
 
   // 备用通道：仅在明确要求时注册独立 section（非 complete 预设才用得上）。
   if (config.emitSection === true) {

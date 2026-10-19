@@ -63,6 +63,7 @@ jobs:
           node verify-memory-injection.mjs
           node verify-memory-isolation.mjs
           node verify-memory-rolling.mjs
+          node verify-memory-archive.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -87,6 +88,10 @@ jobs:
             echo "::error::verify-memory-rolling 在 CI 里被跳过了，但它不该跳过"
             exit 1
           fi
+          # 超 80 条必须真的归档并瘦身，否则文件会无限长、archive/ 永远空
+          arch="$(node verify-memory-archive.mjs 2>&1)"
+          echo "$arch"
+          echo "$arch" | grep -q "RESULT: PASS"
           # 这条最关键：证明记忆真的进得了模型看到的提示（变量通道），
           # 而独立 section 会被 complete:true 丢掉 —— 防止哪天又退回死路。
           inject="$(node verify-memory-injection.mjs 2>&1)"
