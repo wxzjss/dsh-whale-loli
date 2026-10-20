@@ -270,8 +270,12 @@ export function apply(ctx, config = {}) {
   // ── 写通道一：工具（小鱼自己调） ────────────────────────────────────
   ctx.effect(() => {
     const tools = ctx.tools;
-    if (typeof tools?.register !== 'function') return () => {};
-    return tools.register({
+    if (typeof tools?.register !== 'function') {
+      console.warn(`[whale-affinity] 作用域里没有 tools.register，调整工具 ${toolName} 未注册`);
+      return () => {};
+    }
+    console.log(`[whale-affinity] registering tool ${toolName} (scope ${scope})`);
+    const dispose = tools.register({
       name: toolName,
       description: [
         `调整小鱼对主人的好感度，范围 ${MIN_AFFINITY} ~ ${MAX_AFFINITY}，默认 ${DEFAULT_AFFINITY}。`,
@@ -316,6 +320,8 @@ export function apply(ctx, config = {}) {
         rawInput: String(args?.value ?? ''),
       }),
     });
+    console.log(`[whale-affinity] registered tool ${toolName} (dispose=${typeof dispose})`);
+    return dispose;
   }, `whale-affinity.tool(${toolName})`);
 
   // ── 写通道二：斜杠命令（主人调，只影响当前会话） ─────────────────────
@@ -327,10 +333,14 @@ export function apply(ctx, config = {}) {
       console.warn(`[whale-affinity] 作用域里没有 commands 服务，/${commandName} 未注册（工具仍可用）`);
       return () => {};
     }
-    return commands.register({
+    // 宿主 dsh-commands 的 COMMAND_NAME 只收小写 ASCII，
+    // 所以 `/好感度` 这种中文命令名在宿主层面根本不合法。
+    // 能做的是让**命令面板里显示的名字**是中文（label/description 全走中文），
+    // 敲 `/` 时弹出「好感度 · 查看或调整小鱼对你的好感度」，选中后输入框给出提示。
+    const dispose = commands.register({
       name: commandName,
-      description: `查看或调整好感度：/${commandName} <${MIN_AFFINITY}~${MAX_AFFINITY}>`,
-      input: { hint: `<${MIN_AFFINITY}~${MAX_AFFINITY}>` },
+      description: `好感度 · 查看或调整小鱼对你的好感度（${MIN_AFFINITY} ~ ${MAX_AFFINITY}，0 是原态）`,
+      input: { hint: `输入好感度数字（${MIN_AFFINITY} ~ ${MAX_AFFINITY}），直接回车＝查看当前值` },
       handler: (invocation) => {
         const raw = String(invocation?.rawInput ?? '').trim();
         if (!raw) {
@@ -348,5 +358,7 @@ export function apply(ctx, config = {}) {
         return { kind: 'success', text: `好感度已设为 ${saved}（${bandOf(saved).label}）` };
       },
     });
+    console.log(`[whale-affinity] registered command /${commandName} (scope ${scope})`);
+    return dispose;
   }, `whale-affinity.command(${commandName})`);
 }

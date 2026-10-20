@@ -608,7 +608,8 @@ export function apply(ctx, config = {}) {
       console.warn(`[whale-memory] 当前作用域没有 tools.register，写入工具 ${toolName} 未注册`);
       return () => {};
     }
-    return tools.register({
+    console.log(`[whale-memory] registering tool ${toolName} in scope ${variableName}`);
+    const dispose = tools.register({
         name: toolName,
         description: [
           `把一句摘要追加到小鱼自己的记忆文件 ${file} 的「滚动摘要」区。`,
@@ -666,6 +667,8 @@ export function apply(ctx, config = {}) {
           rawInput: args.summary,
         }),
     });
+    console.log(`[whale-memory] registered tool ${toolName} (dispose=${typeof dispose})`);
+    return dispose;
   }, `whale-memory.tool(${toolName})`);
 
   /**
