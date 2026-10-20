@@ -167,3 +167,8 @@ node verify-live-assembly.mjs      # 用真实 patch + 真实记忆文件复刻�
 node smoke-memory.mjs              # 变量与工具的注册形态 / 读盘即时生效
 node verify-patch.mjs cordis.patch.yml   # patch 里的 variableName/toolName/turnLimit 与规则文案
 ```
+
+CI（`.github/workflows/release.yml`）在 tag 上会把这些都跑一遍，
+并对 `verify-memory-isolation` / `verify-memory-tool` / `verify-memory-rolling` /
+`verify-memory-archive` / `verify-memory-injection` 额外断言「没有出现 `[skip]`，
+真的执行了」—— 它们不依赖宿主库，静默跳过就说明检查退化了。
