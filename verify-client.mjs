@@ -267,7 +267,8 @@ check('分区带着 remote 注入', typeof section.inject === 'function' && sect
 
 const daemonModule = await import(pathToFileURL(DAEMON).href);
 const hostMethods = daemonModule.REMOTE_METHODS.map((row) => row.method);
-const clientMethods = (contribution?.methods ?? []).map((row) => row.method);
+// 宿主 $mount() 只读 `contribution.descriptors`。
+const clientMethods = (contribution?.descriptors ?? []).map((row) => row.method);
 check(
   '客户端方法表 = 宿主 REMOTE_METHODS',
   JSON.stringify(clientMethods) === JSON.stringify(hostMethods),

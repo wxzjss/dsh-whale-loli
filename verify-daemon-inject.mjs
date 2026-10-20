@@ -57,7 +57,11 @@ const code = source
   .replace(/^\s*\/\/.*$/gm, '');
 const used = [...new Set([...code.matchAll(/ctx\.(provide|get|reflect|effect|on|inject|typert)\b/g)].map((m) => m[1]))];
 console.log('   用到的 ctx 成员 =', JSON.stringify(used));
-const ALLOWED = new Set(['provide', 'get', 'reflect', 'effect', 'on']);
+// `inject` 是 cordis `registry` mixin 的内建成员（lib/index.js:744 把
+// `inject` / `plugin` 挂到 ctx 上），用 `ctx.inject(['webServer'], cb)` 开一个
+// **子 fiber** 去注册 `/whale-report` 诊断路由 —— 它不会把 daemon 自己的 fiber
+// 卡在 Pending（那才是 `inject` 静态声明才会有的风险），所以算白名单内的能力。
+const ALLOWED = new Set(['provide', 'get', 'reflect', 'effect', 'on', 'inject']);
 const overreach = used.filter((m) => !ALLOWED.has(m));
 check(
   '只使用白名单里的 ctx 成员',

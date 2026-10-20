@@ -127,9 +127,17 @@ if (contribution !== undefined) {
   console.log('');
   console.log('== 2. contribution 顶层字段 ==');
   check(contribution.package === 'dsh-whale-loli', 'package 是 dsh-whale-loli', contribution.package);
-  check(Array.isArray(contribution.methods) && contribution.methods.length > 0, 'methods 是非空数组', `${contribution.methods?.length} 个`);
+  // 宿主 `$mount()` 读的是 `contribution.descriptors`（client.browser.js:1700
+  // `for (const descriptor of contribution.descriptors)`）。写成 `methods` 会让
+  // 它直接抛 `contribution.descriptors is not iterable`，命名空间永远挂不上。
+  check(
+    Array.isArray(contribution.descriptors) && contribution.descriptors.length > 0,
+    'descriptors 是非空数组（宿主唯一读取的字段）',
+    `${contribution.descriptors?.length} 个`,
+  );
+  check(!('methods' in contribution), '没有遗留的 methods 字段', Object.keys(contribution).join(', '));
 
-  const descriptors = (contribution.methods ?? []).map((row) => ({
+  const descriptors = (contribution.descriptors ?? []).map((row) => ({
     ...row,
     namespace: row.namespace ?? NAMESPACE,
     parameters: row.parameters ?? [],

@@ -458,7 +458,66 @@ export function apply(ctx) {
     trace('ctx.effect 抛错（已吞）', { error: String(error?.message ?? error) });
   }
 
+  // ── 客户端带外诊断通道 ──────────────────────────────────────────────
+  //
+  // 浏览器面板出问题时**不能**用 remote 通道回报 —— 那条通道本身就是要诊断的东西。
+  // 之前用 `remote['whale-affinity'].report(...)` 打点，结果 $mount 一失败就什么都
+  // 写不出来，日志永远是空的。所以这里注册一个免鉴权的 prefix 路由，客户端用同源
+  // fetch 打点，落盘到 <DSH_HOME>/whale-affinity-client.log。
+  //
+  // 依据：`dsh-host-webserver` 的 `register(route)`（lib/index.js:325-332）只是把路由
+  // 放进 exact/prefixes 表，**不做任何鉴权**；`dsh-client-modules` 的 `/plugins`
+  // 路由同样未鉴权可达（错 URL 返回 404 而不是 401）。
+  try {
+    ctx.inject?.(['webServer'], (wctx) => {
+      wctx.effect(
+        () =>
+          wctx.webServer.register({
+            kind: 'prefix',
+            path: '/whale-report',
+            handler: handleReport,
+          }),
+        'whale-affinity-daemon.report route',
+      );
+    });
+  } catch (error) {
+    trace('注册 /whale-report 路由失败（已吞）', { error: String(error?.message ?? error) });
+  }
+
   return undefined;
+}
+
+/**
+ * `/whale-report` 的处理器：把客户端打点写进 `whale-affinity-client.log`。
+ *
+ * 客户端用 `fetch('/whale-report?stage=...&message=...')` 打过来；`request.url`
+ * 可能是完整 URL 也可能是 path，统一用 `new URL(raw, 'http://dsh.invalid')` 兜住。
+ *
+ * @param request - 宿主 webServer 传进来的请求对象。
+ * @returns 一个极小的 200 响应。
+ */
+function handleReport(request) {
+  try {
+    const raw = typeof request?.url === 'string' ? request.url : '/';
+    const url = new URL(raw, 'http://dsh.invalid');
+    traceClient(url.searchParams.get('stage') ?? '', url.searchParams.get('message') ?? '');
+  } catch (error) {
+    traceClient('handler-error', String(error?.message ?? error));
+  }
+  return new Response('ok', {
+    status: 200,
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+  });
+}
+
+/** 把浏览器侧的打点追加到 `<DSH_HOME>/whale-affinity-client.log`。 */
+function traceClient(stage, message) {
+  try {
+    const line = JSON.stringify({ at: new Date().toISOString(), stage, message });
+    appendFileSync(join(dshHome(), 'whale-affinity-client.log'), line + '\n');
+  } catch {
+    // 诊断失败绝不能影响插件加载
+  }
 }
 
 /**
