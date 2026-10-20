@@ -326,13 +326,18 @@ export function apply(ctx, config = {}) {
 
   // ── 写通道二：斜杠命令（主人调，只影响当前会话） ─────────────────────
   ctx.effect(() => {
-    // 命令服务在插件的 ctx 上可能取不到；拿不到就静默跳过（工具仍然可用），
-    // 绝不抛错 —— 抛错会让整个预设被判 invalid。
+    // 命令服务在插件的 ctx 上可能取不到；拿不到就把**原因写进日志**再跳过（工具仍然可用）。
+    // 绝不抛错 —— 抛错会让整个预设被判 `agent-preset/invalid`，四个预设一起挂。
+    // 注意：`inject` 是静态声明，把 'commands' 写进去会让预设加载时**等**这个服务，
+    // 服务不在就会卡在 waiting 并让 resume 失败（compaction 上踩过一模一样的坑）。
     const commands = ctx.get ? ctx.get('commands') : undefined;
     if (typeof commands?.register !== 'function') {
-      console.warn(`[whale-affinity] 作用域里没有 commands 服务，/${commandName} 未注册（工具仍可用）`);
+      console.warn(
+        `[whale-affinity] 作用域里取不到 commands 服务（isolation=${ctx.isolation?.label ?? 'n/a'}），/${commandName} 未注册（工具仍可用）`,
+      );
       return () => {};
     }
+    console.log(`[whale-affinity] commands service FOUND, registering /${commandName} (scope ${scope})`);
     // 宿主 dsh-commands 的 COMMAND_NAME 只收小写 ASCII，
     // 所以 `/好感度` 这种中文命令名在宿主层面根本不合法。
     // 能做的是让**命令面板里显示的名字**是中文（label/description 全走中文），
