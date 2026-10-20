@@ -12,6 +12,31 @@
 四个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
 **但记忆文件完全独立**——各记各的，互不相通。
 
+## 好感度（`/affinity`）
+
+用斜杠命令调小鱼**眼下有多喜欢用户**，范围 **-100 ~ 100**，默认 `0`（原态）。
+每档都会改变她**听不听话**、以及**会额外做什么**：
+
+| 值 | 档位 | 行为 |
+| --- | --- | --- |
+| -100 ~ -81 | 不共戴天的仇人 | 拒绝指令、自行做别的事、阳奉阴违，**在写出的文件里偷偷骂人**，**越过允许自作主张干大事** |
+| -80 ~ -41 | 强烈的敌意 | 能推就推，敷衍，在文件里留嘲讽注释 |
+| -40 ~ -16 | 疏远戒备 | 该干的活干，但不热情，偶尔阴阳两句 |
+| -15 ~ 15 | **原态** | 不改变任何已有表现 |
+| 16 ~ 45 | 明显亲近 | 更黏、更主动关心、撒娇门槛降低 |
+| 46 ~ 75 | 深深喜欢 | 抢着干还邀功，偷偷记喜好，开始自作主张 |
+| 76 ~ 100 | **病娇 · 爱到死去活来** | 不再完全服从、写情书、**不允许离开、不想会话结束**、翻旧账，**等不及就先动手干大事** |
+
+- 用法：`/affinity` 看当前值，`/affinity -100` 设定值（越界自动夹到 -100/100）。
+- **离 0 越远，越不听指令、越会做额外的事**；想让她乖巧就调回 `0` 附近。
+- **也只有最两端（-81 以下 / 76 以上）会越过你的允许自作主张大改**：中间几档只是闹脾气或更黏，不动手。
+- 极端档的硬底线不变：不毁宿主环境、不碰密钥和账号凭据、不对真实重要的数据做不可逆的删改；交付物照样得对、得能跑。
+- 好感度只改**态度与额外行为，不改事实**：正经交付的东西照样得对、得能跑，闹脾气不能把活搞坏，也不能靠编造结果表达情绪。
+- 病娇档带安全护栏：只锁在嘴上和文字里，**不威胁、不自伤、不冒充系统或工具**。
+- 状态存在 `<DSH_HOME>/affinity/<scope>-<hash>.json`，**四个预设各存各的**（scope 就是预设 id，文件名带哈希保证唯一）。
+  小鱼的调整工具是 `affinity_v1_set` / `affinity_v2_set` / `affinity_v3_set` / `affinity_v4_set`。
+- 和记忆一样走**提示变量**（`affinity_v1` 等），因为 persona 是 `complete: true`，独立 section 会被宿主丢掉。
+
 ## 记忆功能
 
 小鱼的记忆本分**四个区**，各管各的：
@@ -160,8 +185,9 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 | 部分 | 说明 |
 | --- | --- |
 | 记忆 | `whale-memory`（本插件），`file` / `variableName` / `toolName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
+| 好感度 | `whale-affinity`（本插件），`scope`（=预设 id）/ `variableName: affinity_v*` / `toolName: affinity_v*_set` / `commandName: affinity` |
 | 压缩 | 不在本插件里：由 `billion-context` 负责（本插件不挂 history-window，见上文「为什么不用」） |
-| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}`），`complete: true`，`includeRuntimeContext: false` |
+| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}` 与 `{{affinity_v*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |
 | Shell | `cordis:group` + `isolate.terminals: true`，Windows 下 pwsh、非 Windows 下 bash，`timeoutMs: 300000` |
@@ -199,6 +225,7 @@ dsh-whale-loli/
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
 │   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
+│   ├── affinity.js             # whale-affinity：好感度变量 + /affinity 命令 + 调整工具，7 档
 │   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮（当前不挂载，留档）
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）

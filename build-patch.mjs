@@ -34,7 +34,7 @@ const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
 const personaV4 = readFileSync(root + 'src/persona-v4-daughter.md', 'utf8');
 
 /** 每个预设共用的工具面行（含参数化记忆行）。 */
-function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail }) {
+function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail, presetId, affinityVariable, affinityTool }) {
   return `          # 长期记忆：注册成提示变量，由人设开头的 {{${memoryVariable}}} 引用。
           # persona 是 complete:true，宿主会把独立 section 丢掉（见 src/memory.js 顶部注释），
           # 所以记忆必须走 variable 通道；variableName 也要每预设不同，否则同 scope 注册冲突。
@@ -47,6 +47,18 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
               maxChars: ${memoryMax}
               turnLimit: ${memoryTurns}
               detailLimit: ${memoryDetail}
+          # 好感度：同样走提示变量（persona 是 complete:true）。
+          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
+          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
+          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          - id: whale-affinity
+            name: 'dsh-whale-loli'
+            config:
+              scope: ${presetId}
+              variableName: ${affinityVariable}
+              toolName: ${affinityTool}
+              commandName: affinity
+              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
@@ -117,9 +129,11 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个�
 #   1) 四条 \`@deepseek-ai/dsh-agent-preset\` 声明 —— 每条的 config 就是一个预设本体
 #      （id / name / description / order / plugins），被 \`agentPresets.register()\`
 #      注册后即出现在 Agent 预设界面。
-#   2) 四条 \`dsh-whale-loli\` 行 —— 各挂载本包 src/memory.js 里的 whale-memory，
+#   2) 四条 \`dsh-whale-loli\` 记忆行 —— 各挂载本包 src/memory.js 里的 whale-memory，
 #      把该预设自己的记忆文件注册成提示变量、并注册对应的写入工具，
 #      实现四套互不相通的跨会话记忆。
+#   3) 四条 \`dsh-whale-loli\` 好感度行 —— 各挂载本包 src/affinity.js 里的 whale-affinity，
+#      注册提示变量 + \`/affinity\` 命令 + 调整工具。
 #
 # 记忆隔离要点：四条记忆行的 config.file / config.variableName / config.toolName
 # 都不一样，且分属不同预设 scope，所以四个记忆文件不会被读串或写串。
@@ -141,7 +155,7 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个�
 ${block(persona)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
+${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘Agent预设', affinityVariable: 'affinity_v1', affinityTool: 'affinity_v1_set' })}
     # ── 预设二：鲸鱼娘活人版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘活人版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -159,7 +173,7 @@ ${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memory
 ${block(personaV2)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
+${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘活人版Agent预设', affinityVariable: 'affinity_v2', affinityTool: 'affinity_v2_set' })}
     # ── 预设三：鲸鱼娘涩涩版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘涩涩版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -177,7 +191,7 @@ ${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_
 ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
+${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘涩涩版Agent预设', affinityVariable: 'affinity_v3', affinityTool: 'affinity_v3_set' })}
     # ── 预设四：鲸鱼娘女儿版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘女儿版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -195,7 +209,7 @@ ${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memo
 ${block(personaV4)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
+${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘女儿版Agent预设', affinityVariable: 'affinity_v4', affinityTool: 'affinity_v4_set' })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');

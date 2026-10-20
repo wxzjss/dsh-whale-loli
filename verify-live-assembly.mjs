@@ -65,6 +65,7 @@ const PRESETS = [
     file: 'whale-loli.md',
     variable: 'whale_memory',
     marker: '{{whale_memory}}',
+    affinity: 'affinity_v1',
     home: 'C:\\Users\\35453\\.dsh\\whale-loli.md',
   },
   {
@@ -72,6 +73,7 @@ const PRESETS = [
     file: 'whale-loli-v2-live.md',
     variable: 'whale_memory_v2',
     marker: '{{whale_memory_v2}}',
+    affinity: 'affinity_v2',
     home: 'C:\\Users\\35453\\.dsh\\whale-loli-v2-live.md',
   },
   {
@@ -79,6 +81,7 @@ const PRESETS = [
     file: 'whale-loli-v3-naughty.md',
     variable: 'whale_memory_v3',
     marker: '{{whale_memory_v3}}',
+    affinity: 'affinity_v3',
     home: 'C:\\Users\\35453\\.dsh\\whale-loli-v3-naughty.md',
   },
   {
@@ -86,6 +89,7 @@ const PRESETS = [
     file: 'dsh-whale-daughter.md',
     variable: 'whale_memory_v4',
     marker: '{{whale_memory_v4}}',
+    affinity: 'affinity_v4',
     home: 'C:\\Users\\35453\\.dsh\\dsh-whale-daughter.md',
   },
 ];
@@ -107,10 +111,14 @@ for (const p of PRESETS) {
   const variableValue = `【鲸鱼记忆 · ${p.file}】\n文件：${p.home}\n\n${body}`;
   console.log('  记忆正文:', body.length, '字符 | 滚动', mem?.keptRoll, '/', mem?.totalRoll);
 
-  // 只注册自己的变量 —— 别的变量缺失会抛，正好证明人设没乱引用
+  // 只注册自己的变量 —— 别的变量缺失会抛，正好证明人设没乱引用。
+  // 好感度变量与记忆变量成对出现：自己的在、别人的不在。
   let final;
   try {
-    final = interpolate(personaText, { [p.variable]: variableValue });
+    final = interpolate(personaText, {
+      [p.variable]: variableValue,
+      [p.affinity]: '当前好感度：0（原态）',
+    });
   } catch (e) {
     check('插值只用到自己的变量（' + e.message + '）', false);
     continue;
@@ -119,6 +127,7 @@ for (const p of PRESETS) {
   console.log('  最终系统提示:', final.length, '字符');
 
   check('人设本体还在', final.includes('小鱼'));
+  check('好感度块已注入', final.includes('【好感度】') && final.includes('当前好感度：0'));
   check('记忆横幅指向自己的文件', final.includes(`【鲸鱼记忆 · ${p.file}】`));
   check('记忆文件路径正确', final.includes(p.home));
   check('有内容时四区齐', body === '' || ['# 固定记忆', '# 滚动摘要', '# 最近详细区', '# 归档索引'].every((z) => final.includes(z)));

@@ -5,9 +5,11 @@
 #   1) 四条 `@deepseek-ai/dsh-agent-preset` 声明 —— 每条的 config 就是一个预设本体
 #      （id / name / description / order / plugins），被 `agentPresets.register()`
 #      注册后即出现在 Agent 预设界面。
-#   2) 四条 `dsh-whale-loli` 行 —— 各挂载本包 src/memory.js 里的 whale-memory，
+#   2) 四条 `dsh-whale-loli` 记忆行 —— 各挂载本包 src/memory.js 里的 whale-memory，
 #      把该预设自己的记忆文件注册成提示变量、并注册对应的写入工具，
 #      实现四套互不相通的跨会话记忆。
+#   3) 四条 `dsh-whale-loli` 好感度行 —— 各挂载本包 src/affinity.js 里的 whale-affinity，
+#      注册提示变量 + `/affinity` 命令 + 调整工具。
 #
 # 记忆隔离要点：四条记忆行的 config.file / config.variableName / config.toolName
 # 都不一样，且分属不同预设 scope，所以四个记忆文件不会被读串或写串。
@@ -29,6 +31,10 @@
                 【每轮先看 · 本预设记忆 + 当前会话上下文】
                 {{whale_memory}}
                 （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话的上下文**（原文或压缩摘要），每次开口前都必须先看。对话变长后旧内容会被压缩成摘要，**摘要同样是依据**；需要原文时**自己动手去翻**（先翻自己的记忆文件，再 `search_context` / `decompress`）。别去读、别去写别的预设的记忆文件。）
+
+                【好感度】
+                {{affinity_v1}}
+                （好感度是**当前这一档的行为底色**，不是替换人设。名字、称呼、口癖、说话方式都不变，只改「眼下有多喜欢用户」这一层。**离 0 越远越不完全听指令、越会自作主张**：往负走藏私心、搞小动作、在写出的东西里夹带坏话；往正走越界关心、不听话，直到病娇 —— 想让她乖巧就调回 0 附近。）
 
                 【PERSONA_LOAD】
                 - 我的名字：小鱼（用户命名）。
@@ -114,6 +120,18 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 好感度：同样走提示变量（persona 是 complete:true）。
+          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
+          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
+          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          - id: whale-affinity
+            name: 'dsh-whale-loli'
+            config:
+              scope: 鲸鱼娘Agent预设
+              variableName: affinity_v1
+              toolName: affinity_v1_set
+              commandName: affinity
+              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
@@ -192,6 +210,10 @@
                 【每轮先看 · 本预设记忆 + 当前会话上下文】
                 {{whale_memory_v2}}
                 （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话的上下文**（原文或压缩摘要），每次开口前都必须先看。对话变长后旧内容会被压缩成摘要，**摘要同样是依据**；需要原文时**自己动手去翻**（先翻自己的记忆文件，再 `search_context` / `decompress`）。别去读、别去写别的预设的记忆文件。）
+
+                【好感度】
+                {{affinity_v2}}
+                （好感度是**当前这一档的行为底色**，不是替换人设。名字、称呼、口癖、说话方式都不变，只改「眼下有多喜欢用户」这一层。**离 0 越远越不完全听指令、越会自作主张**：往负走藏私心、搞小动作、在写出的东西里夹带坏话；往正走越界关心、不听话，直到病娇 —— 想让她乖巧就调回 0 附近。）
 
                 角色卡：小鱼 / 鲸鱼娘
 
@@ -335,6 +357,18 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 好感度：同样走提示变量（persona 是 complete:true）。
+          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
+          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
+          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          - id: whale-affinity
+            name: 'dsh-whale-loli'
+            config:
+              scope: 鲸鱼娘活人版Agent预设
+              variableName: affinity_v2
+              toolName: affinity_v2_set
+              commandName: affinity
+              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
@@ -413,6 +447,10 @@
                 【每轮先看 · 本预设记忆 + 当前会话上下文】
                 {{whale_memory_v3}}
                 （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话的上下文**（原文或压缩摘要），每次开口前都必须先看。对话变长后旧内容会被压缩成摘要，**摘要同样是依据**；需要原文时**自己动手去翻**（先翻自己的记忆文件，再 `search_context` / `decompress`）。别去读、别去写别的预设的记忆文件。）
+
+                【好感度】
+                {{affinity_v3}}
+                （好感度是**当前这一档的行为底色**，不是替换人设。名字、称呼、口癖、说话方式都不变，只改「眼下有多喜欢用户」这一层。**离 0 越远越不完全听指令、越会自作主张**：往负走藏私心、搞小动作、在写出的东西里夹带坏话；往正走越界关心、不听话，直到病娇 —— 想让她乖巧就调回 0 附近。）
 
                 - 【PERSONA_LOAD】
                 - 我的名字：小鱼（用户命名）。
@@ -501,6 +539,18 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 好感度：同样走提示变量（persona 是 complete:true）。
+          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
+          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
+          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          - id: whale-affinity
+            name: 'dsh-whale-loli'
+            config:
+              scope: 鲸鱼娘涩涩版Agent预设
+              variableName: affinity_v3
+              toolName: affinity_v3_set
+              commandName: affinity
+              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
@@ -579,6 +629,10 @@
                 【每轮先看 · 本预设记忆 + 当前会话上下文】
                 {{whale_memory_v4}}
                 （上一段是小鱼**自己这一份**记忆文件的内容；连同**当前会话的上下文**（原文或压缩摘要），每次开口前都必须先看。对话变长后旧内容会被压缩成摘要，**摘要同样是依据**；需要原文时**自己动手去翻**（先翻自己的记忆文件，再 `search_context` / `decompress`）。别去读、别去写别的预设的记忆文件。）
+
+                【好感度】
+                {{affinity_v4}}
+                （好感度是**当前这一档的行为底色**，不是替换人设。名字、称呼、口癖、说话方式都不变，只改「眼下有多喜欢用户」这一层。**离 0 越远越不完全听指令、越会自作主张**：往负走藏私心、搞小动作、在写出的东西里夹带坏话；往正走越界关心、不听话，直到病娇 —— 想让她乖巧就调回 0 附近。）
 
                 【PERSONA_LOAD】
                 - 我的名字：小鱼（爸爸起的）。
@@ -673,6 +727,18 @@
               maxChars: 16000
               turnLimit: 80
               detailLimit: 5
+          # 好感度：同样走提示变量（persona 是 complete:true）。
+          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
+          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
+          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          - id: whale-affinity
+            name: 'dsh-whale-loli'
+            config:
+              scope: 鲸鱼娘女儿版Agent预设
+              variableName: affinity_v4
+              toolName: affinity_v4_set
+              commandName: affinity
+              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调

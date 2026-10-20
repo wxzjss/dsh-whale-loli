@@ -58,11 +58,21 @@ function interpolate(text, vars) {
   return out + text.slice(last);
 }
 
+/** 每个预设自己的好感度变量，与 build-patch.mjs 的 toolRows() 参数保一致。 */
+const AFFINITY_VARS = {
+  鲸鱼娘Agent预设: 'affinity_v1',
+  鲸鱼娘活人版Agent预设: 'affinity_v2',
+  鲸鱼娘涩涩版Agent预设: 'affinity_v3',
+  鲸鱼娘女儿版Agent预设: 'affinity_v4',
+};
+
 for (const p of idx.PRESETS) {
   const text = idx.personaTextOf(p.id);
   const varName = p.memoryVariable;
-  const rendered = interpolate(text, { [varName]: '__INJECTED_MEMORY__' });
+  const affVar = AFFINITY_VARS[p.id];
+  const rendered = interpolate(text, { [varName]: '__INJECTED_MEMORY__', [affVar]: '__INJECTED_AFFINITY__' });
   check(`${p.id} 变量 ${varName} 被替换`, rendered.includes('__INJECTED_MEMORY__'));
+  check(`${p.id} 变量 ${affVar} 被替换`, rendered.includes('__INJECTED_AFFINITY__'));
   check(`${p.id} 不留裸 {{}}`, !rendered.includes('{{'));
 }
 
@@ -72,8 +82,13 @@ for (const p of idx.PRESETS) {
   const used = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]))];
   const declared = [...patch.matchAll(/variableName: (\S+)/g)].map((m) => m[1]);
   check(`${p.id} 引用的变量都已声明`, used.every((u) => declared.includes(u)), `引用=[${used}] 声明=[${declared}]`);
-  // 人设只许引用自己那一个变量，防止复制粘贴时串台
-  check(`${p.id} 只引用自己的变量 ${p.memoryVariable}`, used.length === 1 && used[0] === p.memoryVariable, `引用=[${used}]`);
+  // 人设只许引用自己那两个变量（记忆 + 好感度），防止复制粘贴时串台
+  const mine = [p.memoryVariable, AFFINITY_VARS[p.id]].sort();
+  check(
+    `${p.id} 只引用自己的变量 [${mine.join(', ')}]`,
+    used.length === 2 && used.slice().sort().join() === mine.join(),
+    `引用=[${used}]`,
+  );
 }
 
 console.log('\n=== 5. 历史窗口不得挂载（预设作用域取不到 compaction）===');

@@ -22,6 +22,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { apply as applyMemory, inject as memoryInject, name as memoryName } from './memory.js';
+import { apply as applyAffinity, name as affinityName } from './affinity.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
@@ -147,6 +148,11 @@ function apply(ctx, config = {}) {
   return applyMemory(ctx, config);
 }
 
+/** 好感度行（scope / variableName / toolName / commandName 由预设各自传入）。 */
+function applyAffinityRow(ctx, config = {}) {
+  return applyAffinity(ctx, config);
+}
+
 export default {
   name: 'dsh-whale-loli',
   // 注意：`inject` 是静态声明，只能写预设作用域里**一直存在**的服务名。
@@ -159,3 +165,20 @@ export default {
 
 // 让 `whale-memory` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。
 export { apply as whaleMemoryApply, memoryName };
+
+// 让 `whale-affinity` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。
+export { apply as whaleAffinityApply, affinityName, applyAffinityRow };
+
+export {
+  MIN_AFFINITY,
+  MAX_AFFINITY,
+  DEFAULT_AFFINITY,
+  BANDS,
+  bandOf,
+  clampAffinity,
+  readAffinity,
+  writeAffinity,
+  affinityPath,
+  affinityDir,
+  renderAffinity,
+} from './affinity.js';
