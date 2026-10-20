@@ -56,8 +56,13 @@ try {
 if (created && !Number.isNaN(created.getTime())) {
   const days = (Date.now() - created.getTime()) / 86400000;
   check('仓库创建满 1 天', days >= 1, `${days.toFixed(3)} 天（created ${created.toISOString()}）`);
+} else if (process.env.CI) {
+  // CI 里 release.yml 没声明 GH_TOKEN，gh 与匿名 API 都不一定给得出 created_at。
+  // 这条门槛是**提交收录 PR 前**的自查项，不是发版门槛；在 CI 里硬判失败会让
+  // 每一个 tag 都发布失败（0.7.2 就这样挂过一次）。所以 CI 里降级为提示。
+  console.log('[skip] CI 里拿不到仓库 created_at（未声明 GH_TOKEN），这条只作提示，不影响发布。');
 } else {
-  check('仓库创建满 1 天', false, '取不到 created_at，无法判定');
+  check('仓库创建满 1 天', false, '取不到 created_at，无法判定（本地设 GH_TOKEN 或装 gh CLI）');
 }
 
 // 4. topic（从 package.json 旁边的记录推断不可靠，改由调用方传 --topics=...）
