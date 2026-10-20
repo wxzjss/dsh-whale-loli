@@ -166,11 +166,12 @@ jobs:
           # 故障形态是：服务 provide 进表了（loose 查得到），但提供者 fiber 卡在
           # Pending(1)，于是 `ctx.get(serviceKey)` 返回 undefined、网关整行跳过、
           # 界面报「远程方法未挂载」，而宿主一个错都不报。这个脚本同时做反证：
-          # apply 抛异常时 strict 查不到。没有宿主 cordis 的裸 runner 会打 [skip]，
-          # 所以它同样不进下面这段「必须真跑」的断言。
+          # apply 抛异常时 strict 查不到。
+          # 它需要宿主的 @deepseek-ai/cordis；裸 runner 上拿不到，会打 [skip] 退出 0
+          # —— 和 verify-peers 一样，**不能**要求它在这里必须 PASS（0.7.2 与 0.9.4
+          # 都是栽在这种「必须有输出」的断言上）。所以只打印，不 grep。
           dsvc="$(node verify-daemon-service.mjs 2>&1)"
           echo "$dsvc"
-          echo "$dsvc" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 
