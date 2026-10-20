@@ -11,7 +11,7 @@
  *   3. `set(scope, value)` 写的文件，必须**就是预设那边 `affinity.js` 读的那一个**
  *      —— 否则面板调的和你聊天时生效的不是同一份，白调。
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -56,7 +56,31 @@ check('四条都是 affinity: true', fresh.wired.every((row) => row.affinity ===
 check('wired 里的 presetId 与 presets 一一对应', JSON.stringify(fresh.wired.map((row) => row.presetId)) === JSON.stringify(fresh.presets.map((row) => row.scope)));
 check('wired 里的 scope 就是预设 id（面板按它读写）', fresh.wired.every((row) => row.scope === row.presetId));
 
-// ── 3. 面板写的 == 预设读的 ────────────────────────────────────────────
+// ── 3. 四份状态文件必须各自独立（中文 id 清洗后容易撞名、共用一份）──────
+const pathById = presets.PRESETS.map((preset) => affinity.affinityPath(preset.id));
+check(
+  '四个预设的状态文件路径两两不同',
+  new Set(pathById).size === pathById.length,
+  pathById.map((file) => file.split(/[\\/]/u).pop()).join(' / '),
+);
+const countAffinityFiles = () => {
+  try {
+    return readdirSync(join(home, 'affinity')).length;
+  } catch {
+    return 0; // 目录还不存在，就是 0 个文件
+  }
+};
+const diskBefore = countAffinityFiles();
+service.set(presets.PRESET_IDS[1], 42);
+const diskAfter = countAffinityFiles();
+check('写一个预设只新增一个文件', diskAfter === diskBefore + 1, `${diskBefore} → ${diskAfter}`);
+check(
+  '写第二个预设时另外三个仍是默认 0',
+  presets.PRESET_IDS.filter((_, index) => index !== 1).every((id) => affinity.readAffinity(id) === 0),
+);
+service.set(presets.PRESET_IDS[1], 0);
+
+// ── 4. 面板写的 == 预设读的 ────────────────────────────────────────────
 for (const preset of presets.PRESETS) {
   const result = service.set(preset.id, 42);
   const expectedPath = affinity.affinityPath(preset.id);
