@@ -69,9 +69,11 @@ jobs:
           node verify-tool-schema.mjs
           node verify-tool-identity.mjs
           node verify-client.mjs
+          node verify-client-contribution.mjs
           node verify-client-discovery.mjs
           node verify-daemon-inject.mjs
           node verify-daemon-service.mjs
+          node verify-host-ledger.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -146,6 +148,17 @@ jobs:
           client="$(node verify-client.mjs 2>&1)"
           echo "$client"
           echo "$client" | grep -q "RESULT: PASS"
+          # 客户端 contribution 必须过得了 `$mount()` 的全部校验（strict codec /
+          # 重复方法 / 命名冲突 / wire 名）。0.9.5 之前面板一直报「远程方法未挂载」，
+          # 而宿主日志证明服务活着 —— 失败在浏览器侧，报错只在 devtools 里，
+          # 用户和我都看不到。这个脚本把那些校验规则抄下来离线跑，不许静默跳过。
+          contrib="$(node verify-client-contribution.mjs 2>&1)"
+          echo "$contrib"
+          echo "$contrib" | grep -q "RESULT: PASS"
+          if echo "$contrib" | grep -q "\[skip\]"; then
+            echo "::error::verify-client-contribution 在 CI 里被跳过了，但它不该跳过"
+            exit 1
+          fi
           # 宿主能不能**发现**客户端 bundle。0.9.1 之前设置页一直看不到「好感度」：
           # 宿主 client-modules 只扫 ctx.loader.entries() 里 specifier 解析得成包的
           # 行，而我们把守护进程写成了 'dsh-whale-loli/affinity-daemon'，它的
@@ -172,6 +185,10 @@ jobs:
           # 都是栽在这种「必须有输出」的断言上）。所以只打印，不 grep。
           dsvc="$(node verify-daemon-service.mjs 2>&1)"
           echo "$dsvc"
+          # 宿主侧账本：能按裸名定位到 bundle、dsh.client 字段齐全、桥接日志活着。
+          # 同样依赖本机安装态（profile + ~/.dsh），裸 runner 上会 [skip]，只打印。
+          ledg="$(node verify-host-ledger.mjs 2>&1)"
+          echo "$ledg"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 
