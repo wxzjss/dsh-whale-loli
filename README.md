@@ -212,13 +212,14 @@ dsh-whale-loli/
 ├── lib/github.mjs              # GitHub REST 封装（token 读取）
 ├── smoke-memory.mjs            # 变量 + 工具的注册形态冒烟测试
 ├── verify-runs.mjs             # 插件真的能加载、配置自洽、变量能插值
-├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与三预设隔离（file/variable/tool 三组名字）
+├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与四预设隔离（file/variable/tool 三组名字）
 ├── verify-real-loader.mjs      # 用 DSH 自己的加载器校验 patch
 ├── verify-composition.mjs      # 校验 bundle+profile 合成后不重复注册
+├── verify-live-runtime.mjs     # 在真机 desktop profile 上合成，确认四个预设各注册一次、order 互异
 ├── verify-history-window.mjs   # 实测真的只留最近 N 轮、不切断工具配对
 ├── verify-memory-injection.mjs # 证明变量通道有效、section 通道被丢弃
 ├── verify-memory-tool.mjs      # 实测写入工具：编号、计数、落盘、详细区同步
-├── verify-memory-isolation.mjs # 实测三个记忆文件不串（读 + 写）
+├── verify-memory-isolation.mjs # 实测四个记忆文件不串（读 + 写）
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
 ├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，四预设互不覆盖）
 ├── verify-live-assembly.mjs    # 用真实 patch + 真实记忆文件复刻宿主装配，比对字节数
@@ -239,6 +240,7 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 node verify-patch.mjs cordis.patch.yml     # patch 结构 + 四预设记忆隔离（file/variable/tool）
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
+node verify-live-runtime.mjs               # 真机 profile 合成后四预设各注册一次、order 互异
 node verify-runs.mjs                       # 插件真能加载 + 变量真能插值
 node verify-history-window.mjs             # 真的裁到最近 N 轮（不切断工具配对）
 node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
