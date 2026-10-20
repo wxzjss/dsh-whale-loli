@@ -1,0 +1,28 @@
+0.9.5: the host side is proven healthy, so make the browser side talk
+
+0.9.4 made apply() unable to throw, and the trace now ends with
+
+    {"message":"fiber 已 active，strict 可见","why":"fiber-active(1->2)"}
+
+i.e. the service IS provided, the fiber reaches Active(2), and strict lookup
+resolves it. Host side is clean; the gateway's resolveSrcDescriptor has all
+the pieces it validates (props type "service", a strict-visible receiver, a
+typertRemote binding whose .service is the original instance, serviceKey and
+namespace both string-equal to what the client sends).
+
+So the remaining failure is on the browser side: ctx.remote.$mount() rejects.
+That error only reaches the devtools console, which is invisible to both the
+user and to me — which is why the panel has been showing the same sentence
+for several releases with nothing to go on.
+
+Changes:
+- AffinityDaemon.report(stage, message, detail) appends to
+  <DSH_HOME>/whale-affinity-client.log. Declared in REMOTE_METHODS so it is
+  itself a Remote method, and it never throws (it runs on the error path).
+- lib/client.js arms the catch of $mount and the catch of the initial status
+  call to call report() when the namespace happens to be mounted, and keeps
+  the message in the panel's own state either way.
+- contribution() now advertises report alongside status / set / verify.
+
+This does not itself fix the mount; it converts an invisible failure into a
+line on disk.

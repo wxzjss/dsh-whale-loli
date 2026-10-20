@@ -151,6 +151,7 @@ export const REMOTE_METHODS = Object.freeze([
   Object.freeze({ method: 'status', invocation: { kind: 'direct' } }),
   Object.freeze({ method: 'set', invocation: { kind: 'direct' } }),
   Object.freeze({ method: 'verify', invocation: { kind: 'direct' } }),
+  Object.freeze({ method: 'report', invocation: { kind: 'direct' } }),
 ]);
 
 /** 四个预设各自的人设文件（与 build-patch.mjs 里的名字一致）。 */
@@ -272,6 +273,35 @@ export class AffinityDaemon {
       methods,
       ok: methods.every((row) => row.valid),
     };
+  }
+
+  /**
+   * 浏览器侧把失败原因写回宿主。
+   *
+   * `$mount` / `invoke` 在浏览器里失败时，错误只进 devtools 的 console ——
+   * 用户看不到，排查时也拿不到。所以客户端在 catch 里调这个方法，把
+   * stage / message / 堆栈落到 `<DSH_HOME>/whale-affinity-client.log`。
+   *
+   * 这个方法本身必须永远不抛：它是在「已经出错」的路径上被调的。
+   *
+   * @param stage - 哪一步失败的（如 `$mount`、`invoke status`）。
+   * @param message - 错误文本。
+   * @param detail - 附加上下文（堆栈等），会被截断。
+   */
+  report(stage, message, detail) {
+    const line = {
+      at: new Date().toISOString(),
+      stage: String(stage ?? '未知阶段'),
+      message: String(message ?? ''),
+      detail: String(detail ?? '').slice(0, 4000),
+    };
+    trace('浏览器侧报错', line);
+    try {
+      appendFileSync(join(dshHome(), 'whale-affinity-client.log'), `${JSON.stringify(line)}\n`);
+    } catch {
+      // 写盘失败也不能抛
+    }
+    return { ok: true };
   }
 }
 
