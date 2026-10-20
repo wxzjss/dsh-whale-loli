@@ -42,6 +42,7 @@ import {
   clampAffinity,
   writeAffinity,
 } from './affinity.js';
+import { PRESETS } from './presets.js';
 
 export const name = 'whale-affinity-daemon';
 
@@ -154,49 +155,54 @@ export const REMOTE_METHODS = Object.freeze([
   Object.freeze({ method: 'report', invocation: { kind: 'direct' } }),
 ]);
 
-/** 四个预设各自的人设文件（与 build-patch.mjs 里的名字一致）。 */
-const PRESET_MEMORY_FILES = Object.freeze({
-  'whale-loli': 'whale-loli.md',
-  'whale-loli-v2-live': 'whale-loli-v2-live.md',
-  'whale-loli-v3-naughty': 'whale-loli-v3-naughty.md',
-  'whale-loli-v4-daughter': 'dsh-whale-daughter.md',
-});
+/**
+ * 「哪些预设挂上了好感度」。
+ *
+ * 曾经这里去扫 `~/.dsh/agent-presets/*.yml` —— 那是早期宿主留下的目录，
+ * 现代 DSH 的预设由插件包的 `cordis.patch.yml` 注册，这个目录根本不存在，
+ * 于是永远返回空数组，设置页只剩一句「还没有哪个预设挂上好感度」，
+ * 一个滑块都不画（用户 2026-10-21 报的就是这个）。
+ *
+ * 现在直接读 `./presets.js` 的唯一事实来源：本服务只有当插件装上了才会被
+ * apply，所以这四个预设必然都挂着好感度；每条 `whale-affinity` 行的
+ * `scope` 就是预设 id，面板按同一个 id 读写，才不会和人设读的不是一份文件。
+ */
+export function wiredScopes() {
+  return PRESETS.map((preset) => ({
+    presetId: preset.id,
+    scope: preset.id,
+    name: preset.name,
+    order: preset.order,
+    affinity: true,
+    memory: true,
+    affinityVariable: preset.affinityVariable,
+    affinityTool: preset.affinityTool,
+    memoryFile: preset.memoryFile,
+  }));
+}
 
 /**
- * 在 `~/.dsh/agent-presets/*.yml` 里找已挂上好感度的预设。
+ * 每个预设当前的好感度：磁盘上有文件就取文件的值，没有就是默认 0。
  *
- * 这里只做字符串判断，不引 yaml：宿主每个回合都会读这个目录，服务侧只在
- * 用户打开设置页时才被调，判断「这一行有没有 `affinity.js`」够用了。
+ * 与 `listAffinities()` 的区别：那个只管「磁盘上有什么」，这个保证
+ * 设置页永远列全四个预设，没设过的显示 0 且可以直接拖。
  */
-function wiredScopes() {
-  const dir = join(dshHome(), 'agent-presets');
-  let files = [];
-  try {
-    files = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const rows = [];
-  for (const file of files) {
-    if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
-    let text;
-    try {
-      text = readFileSync(join(dir, file), 'utf8');
-    } catch {
-      continue;
-    }
-    const idMatches = [...text.matchAll(/^\s*-?\s*id:\s*['"]?(preset-[A-Za-z0-9._-]+)/gmu)];
-    const presetId = idMatches.length > 0 ? idMatches[0][1] : file.replace(/\.ya?ml$/u, '');
-    const memory = PRESET_MEMORY_FILES[presetId];
-    rows.push({
-      presetId,
-      file,
-      affinity: text.includes('dsh-whale-loli/affinity'),
-      memory: memory !== undefined && text.includes(memory),
-    });
-  }
-  rows.sort((a, b) => a.presetId.localeCompare(b.presetId, 'zh-Hans-CN'));
-  return rows;
+export function presetAffinities() {
+  const onDisk = new Map(listAffinities().map((row) => [row.scope, row]));
+  return PRESETS.map((preset) => {
+    const file = onDisk.get(preset.id);
+    const value = file === undefined ? DEFAULT_AFFINITY : file.value;
+    return {
+      scope: preset.id,
+      name: preset.name,
+      order: preset.order,
+      value,
+      band: bandOf(value).label,
+      updatedAt: file === undefined ? null : file.updatedAt,
+      file: file === undefined ? null : file.file,
+      hasFile: file !== undefined,
+    };
+  });
 }
 
 /**
@@ -222,7 +228,7 @@ export class AffinityDaemon {
    */
   status() {
     return {
-      presets: listAffinities(),
+      presets: presetAffinities(),
       bands: bandCatalog(),
       min: MIN_AFFINITY,
       max: MAX_AFFINITY,

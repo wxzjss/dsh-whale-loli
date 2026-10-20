@@ -72,6 +72,7 @@ jobs:
           node verify-client-contribution.mjs
           node verify-client-discovery.mjs
           node verify-daemon-inject.mjs
+          node verify-daemon-status.mjs
           node verify-daemon-service.mjs
           node verify-client-gateway-access.mjs
           node verify-host-ledger.mjs
@@ -176,6 +177,13 @@ jobs:
           dinj="$(node verify-daemon-inject.mjs 2>&1)"
           echo "$dinj"
           echo "$dinj" | grep -q "RESULT: PASS"
+          # 设置页要的数据必须真的齐：`status()` 无论磁盘上有没有值都列全四个
+          # 预设，`wired` 不能是空数组（0.9.8 的故障：它去扫一个宿主早就不用的
+          # 目录，于是面板只剩「还没有哪个预设挂上好感度」，一个滑块都没有）。
+          # 这个脚本只用临时 DSH_HOME，不依赖宿主，所以可以硬要求 PASS。
+          dstat="$(node verify-daemon-status.mjs 2>&1)"
+          echo "$dstat"
+          echo "$dstat" | grep -q "RESULT: PASS"
           # 服务必须在**真实 cordis** 里 strict 可见（网关的判定路径）。0.9.x 的
           # 故障形态是：服务 provide 进表了（loose 查得到），但提供者 fiber 卡在
           # Pending(1)，于是 `ctx.get(serviceKey)` 返回 undefined、网关整行跳过、

@@ -37,6 +37,12 @@
   agent 自己也能改，工具是 `affinity_v1_set` / `affinity_v2_set` / `affinity_v3_set` / `affinity_v4_set`。
 - 和记忆一样走**提示变量**（`affinity_v1` 等），因为 persona 是 `complete: true`，独立 section 会被宿主丢掉。
 
+> **0.9.9 修的那个坑**：面板一度只有一句「还没有哪个预设挂上好感度」，一个滑块都没有、也设不了值。
+> 根因是宿主半边去扫 `~/.dsh/agent-presets/*.yml` 判断「哪些预设挂了好感度」——那是早期宿主留下的目录，
+> 现代 DSH 的预设由插件包的 `cordis.patch.yml` 注册，这个目录根本不存在，于是 `wired` 永远是空数组。
+> 现在预设清单只有一份（`src/presets.js`），`src/index.js` 和 `src/daemon.js` 都读它；`status()` 无论磁盘上有没有值，
+> 都列全四个预设，没设过的显示 `0`，可以直接拖。`verify-daemon-status.mjs` 把这条锁住了。
+
 ### 面板是怎么连上磁盘的
 
 设置页是浏览器里的 React，够不到 `~/.dsh/affinity/` 的磁盘（宿主的 21 个内置 Remote 命名空间逐个查过，没有一个能读写这个目录）。
@@ -273,6 +279,7 @@ dsh-whale-loli/
 ├── cordis.patch.yml            # 四个预设的声明本体（由 build-patch.mjs 生成）
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
+│   ├── presets.js              # 预设清单（唯一事实来源：index.js 与 daemon.js 都读它）
 │   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
 │   ├── affinity.js             # whale-affinity：好感度变量 + 调整工具，7 档
 │   ├── daemon.js               # whale-affinity-daemon：宿主根作用域的 remote 服务，给设置页读写好感度
@@ -306,6 +313,7 @@ dsh-whale-loli/
 ├── verify-tool-schema.mjs      # 用宿主自己的校验器验八个工具的 JSON schema 合法
 ├── verify-tool-identity.mjs    # 共享表语义下八个工具描述互不串台、定义互不共享引用
 ├── verify-client.mjs           # 浏览器半边：section 注册、$mount 负载、面板渲染、无 ESM/JSX
+├── verify-daemon-status.mjs    # 设置页数据：列全四预设、wired 非空、set 写的正是人设读的那份
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -335,6 +343,7 @@ node verify-live-assembly.mjs              # 复刻宿主装配，比对注入�
 node verify-tool-schema.mjs                # 宿主自己的校验器验八个工具的 JSON schema
 node verify-tool-identity.mjs              # 八个工具描述互不串台（共享表语义）
 node verify-client.mjs                     # 设置页半边：section 注册 + 面板渲染
+node verify-daemon-status.mjs              # 设置页数据：四预设列全、wired 非空、读写同一份
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查

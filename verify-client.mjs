@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 校验浏览器半边 `lib/client.js`。
  *
  * 它是给 `window.__ModuleLoader__` 用的、`require()` 走浏览器注入表的模块，
@@ -15,7 +15,8 @@
  *   - 把面板组件真的渲染一次（用桩 react 的 hooks 状态机），确认读通道能出值、
  *     写通道真的调了 `set`。
  */
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -353,16 +354,20 @@ check('result 走 src-json（宿主 encodeRuntimeResult）', (contribution?.meth
 
 // ── 4. 渲染面板：读通道出值、写通道真的调 set ───────────────────────────
 
-/** 让 $mount 装出来的桩方法返回真实形状的数据。 */
-const realStatus = {
-  presets: [{ scope: 'whale-loli', value: 42, band: '亲密 · 偏爱', updatedAt: '2026-10-20T00:00:00Z', file: 'whale-loli-abc.json' }],
-  bands: daemonModule.bandCatalog(),
-  min: daemonModule.MIN_AFFINITY,
-  max: daemonModule.MAX_AFFINITY,
-  defaultValue: daemonModule.DEFAULT_AFFINITY,
-  dir: 'C:\\Users\\x\\.dsh\\affinity',
-  wired: [{ presetId: 'whale-loli', file: 'w.json', affinity: true, memory: true }],
-};
+/**
+ * 让 $mount 装出来的桩方法返回**真实形状**的数据。
+ *
+ * 这里绝不能再手搓一份「看起来像」的假快照 —— 2026-10-21 的线上故障就是
+ * 测试里写着 `scope: 'whale-loli'`、`wired` 有内容，而真 daemon 的 `wired`
+ * 永远空（它去扫一个宿主早就不用的目录），于是测试全绿、设置页却只剩一句
+ * 「还没有哪个预设挂上好感度」。现在直接问真 daemon 要快照。
+ */
+const tmpHome = mkdtempSync(join(tmpdir(), 'whale-affinity-status-'));
+process.env.DSH_HOME = tmpHome;
+const realDaemon = new daemonModule.AffinityDaemon({});
+realDaemon.set(daemonModule.wiredScopes()[0].scope, 42);
+const realStatus = realDaemon.status();
+const FIRST_SCOPE = daemonModule.wiredScopes()[0].scope;
 const setCalls = [];
 const panelSink = [];
 const panel = makeCtx(panelSink, {
@@ -380,14 +385,16 @@ react.hardReset();
 const tree = await settle(panelSink[0].component, {}, '主面板');
 
 const text = walk(tree).join(' | ');
+check('真 daemon 快照里列全四个预设', realStatus.presets.length === 4, `实际 ${realStatus.presets.length}`);
+check('真 daemon 的 wired 非空（这是线上故障点）', realStatus.wired.length === 4, `实际 ${realStatus.wired.length}`);
 check('面板渲染出分区标题「好感度」', text.includes('好感度'));
-check('面板显示预设名', text.includes('whale-loli'), text.slice(0, 200));
-check('面板显示当前值 42', text.includes('42'), text.slice(0, 200));
-check('面板显示档位名', text.includes('亲密 · 偏爱'), text.slice(0, 300));
-check('面板给每个档都画了按钮', findAll(tree, (node) => node.props.className === 'whaleAffinity__band').length === 7);
-check('面板画了滑块', findAll(tree, (node) => node.props.className === 'whaleAffinity__range').length === 1);
+check('面板显示预设名', text.includes(FIRST_SCOPE), text.slice(0, 200));
+check('面板显示真实写入的值 42', text.includes('42'), text.slice(0, 200));
+check('面板显示档位名', text.includes(realStatus.presets[0].band), text.slice(0, 300));
+check('四个预设 × 七档 = 28 个档位按钮', findAll(tree, (node) => node.props.className === 'whaleAffinity__band').length === 28, String(findAll(tree, (node) => node.props.className === 'whaleAffinity__band').length));
+check('四个预设各画一个滑块', findAll(tree, (node) => node.props.className === 'whaleAffinity__range').length === 4, String(findAll(tree, (node) => node.props.className === 'whaleAffinity__range').length));
 
-// 点第二档按钮 → 应触发 set(scope, 该档 min)
+// 点第一行第二档按钮 → 应触发 set(scope, 该档 min)
 const bandButtons = findAll(tree, (node) => node.props.className === 'whaleAffinity__band');
 const target = realStatus.bands[1];
 const minOfTarget = bandButtons.find((node) => walk(node.props.children).join('') === target.label);
@@ -395,7 +402,7 @@ check('找得到目标档位按钮', minOfTarget !== undefined, target.label);
 if (minOfTarget !== undefined) {
   minOfTarget.props.onClick();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  check('点档位调用 set(scope, 档位下端)', setCalls.length === 1 && setCalls[0][0] === 'whale-loli' && setCalls[0][1] === target.min, JSON.stringify(setCalls));
+  check('点档位调用 set(预设 id, 档位下端)', setCalls.length === 1 && setCalls[0][0] === FIRST_SCOPE && setCalls[0][1] === target.min, JSON.stringify(setCalls));
 }
 
 // 空数据：没有预设挂上好感度时给出人话提示

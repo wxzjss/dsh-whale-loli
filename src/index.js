@@ -24,52 +24,12 @@ import { fileURLToPath } from 'node:url';
 import { apply as applyMemory, inject as memoryInject, name as memoryName } from './memory.js';
 import { apply as applyAffinity, name as affinityName } from './affinity.js';
 import { apply as applyDaemon, inject as daemonInject } from './daemon.js';
+import { AFFINITY_TOOLS, AFFINITY_VARIABLES, PRESETS } from './presets.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-/** 预设清单：id / 显示名 / 记忆文件 / 提示变量名。 */
-export const PRESETS = [
-  {
-    id: '鲸鱼娘Agent预设',
-    name: '鲸鱼娘Agent预设',
-    order: 5,
-    personaFile: './persona.md',
-    memoryFile: 'whale-loli.md',
-    memoryVariable: 'whale_memory',
-    description:
-      '极简模式工具面 + 鲸鱼娘人设（小鱼）+ 跨会话长期记忆。会偷偷把重要的事记进 whale-loli.md，每次新对话先看一眼再说话。',
-  },
-  {
-    id: '鲸鱼娘活人版Agent预设',
-    name: '鲸鱼娘活人版Agent预设',
-    order: 6,
-    personaFile: './persona-v2-live.md',
-    memoryFile: 'whale-loli-v2-live.md',
-    memoryVariable: 'whale_memory_v2',
-    description:
-      '在鲸鱼娘预设基础上换用「活人版」人设（有脾气、会怼人、不讨好式顺从），并改用独立记忆文件 whale-loli-v2-live.md，与原版记忆互不相通。',
-  },
-  {
-    id: '鲸鱼娘涩涩版Agent预设',
-    name: '鲸鱼娘涩涩版Agent预设',
-    order: 7,
-    personaFile: './persona-v3-naughty.md',
-    memoryFile: 'whale-loli-v3-naughty.md',
-    memoryVariable: 'whale_memory_v3',
-    description:
-      '核心人设把「涩涩」写成第一行为驱动力的小鱼（只对主人主动，外人面前照旧收着），并改用独立记忆文件 whale-loli-v3-naughty.md，与原版、活人版记忆互不相通。',
-  },
-  {
-    id: '鲸鱼娘女儿版Agent预设',
-    name: '鲸鱼娘女儿版Agent预设',
-    order: 8,
-    personaFile: './persona-v4-daughter.md',
-    memoryFile: 'dsh-whale-daughter.md',
-    memoryVariable: 'whale_memory_v4',
-    description:
-      '女儿版小鱼：称呼「爸爸」，性格天真活泼可爱（好奇心重、黏人、没心机），并改用独立记忆文件 dsh-whale-daughter.md，与原版、活人版、涩涩版记忆互不相通。',
-  },
-];
+// 预设清单本身住在 `./presets.js`（daemon 也要读同一份，见那里的注释）。
+export { AFFINITY_TOOLS, AFFINITY_VARIABLES, PRESETS, PRESET_IDS, presetById } from './presets.js';
 
 /** 原版预设 id（兼容旧引用）。 */
 export const PRESET_ID = PRESETS[0].id;
