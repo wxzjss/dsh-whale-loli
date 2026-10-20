@@ -52,6 +52,19 @@ function createReact() {
     cursor = 0;
   }
 
+  /**
+   * 整体卸载：清掉所有 hook 槽位和待重渲染队列。
+   *
+   * 换一个面板实例（比如从「有数据」切到「空数据」）时，真 react 会重新挂载
+   * 、state 全新；这里必须清槽位，否则 useState 会沿用上一轮的值，
+   * 断言就会拿旧数据去比。
+   */
+  function hardReset() {
+    slots.length = 0;
+    pending.length = 0;
+    cursor = 0;
+  }
+
   function useState(initial) {
     const index = cursor;
     cursor += 1;
@@ -113,6 +126,7 @@ function createReact() {
     jsxRuntime: { jsx, jsxs, Fragment: Symbol('Fragment') },
     /** 每次渲染前调用，重置 hook 游标。 */
     reset,
+    hardReset,
     /** 跑完一次渲染后收集 cleanup。 */
     cleanups: () => slots.filter((slot) => slot !== undefined && 'cleanup' in slot).map((slot) => slot.cleanup),
     /** 有没有因为 setState 而「需要重渲染」。 */
@@ -218,38 +232,77 @@ check('导出 apply / inject / AffinitySection', typeof client?.apply === 'funct
   && typeof client.AffinitySection === 'function');
 
 const effects = [];
-const ctx = {
-  effect(fn, label) {
-    const dispose = fn();
-    effects.push({ label, dispose });
-    return () => {};
-  },
-  slots: {
-    inject(name, fn) {
-      const value = fn();
-      return () => value?.();
-    },
-    register(options, component) {
-      registered.push({ options, component });
-      return () => {};
-    },
-  },
-  remote: {
-    async $mount(spec) {
-      contribution = spec;
-      // 模拟宿主挂完之后 `ctx.remote['whale-affinity']` 就存在了
-      const namespace = {};
-      for (const method of spec.methods) {
-        namespace[method.method] = async (...args) => ({ ok: true, value: { method: method.method, args } });
-      }
-      mountedRemote = { [spec.methods[0].namespace]: namespace };
-      this[spec.methods[0].namespace] = namespace;
-      return () => {};
-    },
-  },
-  connection: { state: 'online' },
-};
 
+/** 子上下文：只暴露自己 inject 过的服务（复刻 cordis 的 store 解析）。 */
+function childOf(table, deps) {
+  return {
+    ...Object.fromEntries(deps.map((dep) => [dep, table[dep]])),
+    effect(fn) {
+      const dispose = fn();
+      return () => dispose?.();
+    },
+  };
+}
+
+/**
+ * 造一个假 ctx。
+ *
+ * 关键：`$mount()` 之后服务才出现在 `table` 里，`inject()` 记下等待者、等它
+ * 出现再用**子上下文**回调 —— 复刻 cordis 的动态 inject。服务名是
+ * `remote.whale-affinity`，在父上下文里直接取会抛
+ * `cannot get property "remote.whale-affinity" without inject`。
+ *
+ * @param sink - 收集 `slots.register` 的数组。
+ * @param stubs - 指定某些方法返回真实数据；没指定的按描述符生成通用桩。
+ */
+function makeCtx(sink, stubs = null) {
+  const waiters = [];
+  const table = {};
+  const flush = () => {
+    for (const waiter of waiters.splice(0)) {
+      if (waiter.deps.every((dep) => dep in table)) waiter.callback(childOf(table, waiter.deps));
+      else waiters.push(waiter);
+    }
+  };
+  const ctx = {
+    effect(fn, label) {
+      const dispose = fn();
+      effects.push({ label, dispose });
+      return () => {};
+    },
+    inject(deps, callback) {
+      waiters.push({ deps, callback });
+      flush();
+      return () => {};
+    },
+    slots: {
+      inject(name, fn) {
+        const value = fn();
+        return () => value?.();
+      },
+      register(options, component) {
+        sink.push({ options, component });
+        return () => {};
+      },
+    },
+    remote: {
+      async $mount(spec) {
+        contribution = spec;
+        const methods = {};
+        for (const descriptor of spec.descriptors) {
+          methods[descriptor.method] = async (...args) => ({ ok: true, value: { method: descriptor.method, args } });
+        }
+        table[`remote.${spec.descriptors[0].namespace}`] = stubs ?? methods;
+        flush();
+        return () => {};
+      },
+    },
+    connection: { state: 'online' },
+  };
+  return { ctx, table };
+}
+
+const { ctx, table } = makeCtx(registered);
 client.apply(ctx);
 
 // $mount 是异步的，等一轮微任务
@@ -261,7 +314,8 @@ check('分区 id 是 whale-affinity', section.id === 'whale-affinity', String(se
 check('分区 label 是「好感度」', typeof section.label === 'function' && section.label() === '好感度');
 check('分区 order 排在 agent-presets(20) 之后', section.order > 20, String(section.order));
 check('分区没有声明 children（不调 renderSlot）', section.children === undefined);
-check('分区带着 remote 注入', typeof section.inject === 'function' && section.inject().remote === ctx.remote);
+check('分区不再注入 remote（服务名只有挂完才存在，必须动态 inject）', section.inject === undefined);
+check('命名空间句柄已经通过动态 inject 拿到', table['remote.whale-affinity'] !== undefined);
 
 // ── 3. $mount 的方法表必须与宿主 REMOTE_METHODS 逐字段对上 ──────────────
 
@@ -310,19 +364,20 @@ const realStatus = {
   wired: [{ presetId: 'whale-loli', file: 'w.json', affinity: true, memory: true }],
 };
 const setCalls = [];
-const panelRemote = {
-  [client.NAMESPACE]: {
-    status: async () => ({ ok: true, value: realStatus }),
-    set: async (scope, value) => {
-      setCalls.push([scope, value]);
-      return { ok: true, value: { scope, value } };
-    },
-    verify: async () => ({ ok: true, value: verify }),
+const panelSink = [];
+const panel = makeCtx(panelSink, {
+  status: async () => ({ ok: true, value: realStatus }),
+  set: async (scope, value) => {
+    setCalls.push([scope, value]);
+    return { ok: true, value: { scope, value } };
   },
-};
+  verify: async () => ({ ok: true, value: verify }),
+});
+client.apply(panel.ctx);
+await new Promise((resolve) => setTimeout(resolve, 0));
 
-react.reset();
-const tree = await settle(client.AffinitySection, { remote: panelRemote }, '主面板');
+react.hardReset();
+const tree = await settle(panelSink[0].component, {}, '主面板');
 
 const text = walk(tree).join(' | ');
 check('面板渲染出分区标题「好感度」', text.includes('好感度'));
@@ -344,15 +399,21 @@ if (minOfTarget !== undefined) {
 }
 
 // 空数据：没有预设挂上好感度时给出人话提示
-const emptyTree = await settle(client.AffinitySection, {
-  remote: { [client.NAMESPACE]: { status: async () => ({ ok: true, value: { ...realStatus, presets: [], wired: [] } }) } },
-}, '空数据面板');
+const emptySink = [];
+const emptyCtx = makeCtx(emptySink, { status: async () => ({ ok: true, value: { ...realStatus, presets: [], wired: [] } }) });
+client.apply(emptyCtx.ctx);
+await new Promise((resolve) => setTimeout(resolve, 0));
+react.hardReset();
+const emptyTree = await settle(emptySink[0].component, {}, '空数据面板');
 check('没有预设时给出提示', walk(emptyTree).join(' ').includes('还没有哪个预设挂上好感度'));
 
 // 错误分支：status 抛错时要显示原因，而不是白屏
-const brokenTree = await settle(client.AffinitySection, {
-  remote: { [client.NAMESPACE]: { status: async () => ({ ok: false, error: { message: '宿主没起来' } }) } },
-}, '错误面板');
+const brokenSink = [];
+const brokenCtx = makeCtx(brokenSink, { status: async () => ({ ok: false, error: { message: '宿主没起来' } }) });
+client.apply(brokenCtx.ctx);
+await new Promise((resolve) => setTimeout(resolve, 0));
+react.hardReset();
+const brokenTree = await settle(brokenSink[0].component, {}, '错误面板');
 check('远程失败时显示原因', walk(brokenTree).join(' ').includes('宿主没起来'), walk(brokenTree).join(' ').slice(0, 200));
 
 // ── 5. 源码级检查 ──────────────────────────────────────────────────────

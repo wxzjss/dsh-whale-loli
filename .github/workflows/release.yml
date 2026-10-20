@@ -73,6 +73,7 @@ jobs:
           node verify-client-discovery.mjs
           node verify-daemon-inject.mjs
           node verify-daemon-service.mjs
+          node verify-client-gateway-access.mjs
           node verify-host-ledger.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
@@ -185,6 +186,12 @@ jobs:
           # 都是栽在这种「必须有输出」的断言上）。所以只打印，不 grep。
           dsvc="$(node verify-daemon-service.mjs 2>&1)"
           echo "$dsvc"
+          # 客户端取命名空间的**唯一**正确姿势：`ctx.inject(['remote.whale-affinity'],
+          # child => …)`。直接 `remote['whale-affinity']` 会被 cordis 的 get 陷阱
+          # 抛 `cannot get property "remote.whale-affinity" without inject`。
+          # 同样要宿主 cordis，裸 runner 上打 [skip]，只打印不 grep。
+          gw="$(node verify-client-gateway-access.mjs 2>&1)"
+          echo "$gw"
           # 宿主侧账本：能按裸名定位到 bundle、dsh.client 字段齐全、桥接日志活着。
           # 同样依赖本机安装态（profile + ~/.dsh），裸 runner 上会 [skip]，只打印。
           ledg="$(node verify-host-ledger.mjs 2>&1)"

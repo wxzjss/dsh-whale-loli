@@ -44,8 +44,16 @@
 
 ```
 - id: whale-affinity-daemon
-  name: 'dsh-whale-loli/affinity-daemon'
+  name: 'dsh-whale-loli'        # 必须裸包名（见下）
+  config:
+    daemon: true
 ```
+
+`name` 只能写**裸包名**：宿主的客户端模块扫描器（`dsh-client-modules` 的
+`exactPackageSpecifier()`）只接受「裸名」或「`@scope/name`」，写成子路径
+（`dsh-whale-loli/affinity-daemon`）会让 `package.json` 解析失败（`ERR_PACKAGE_PATH_NOT_EXPORTED`），
+于是 `dsh.client` 永远发现不了、面板永不出现，**而宿主一个错都不报**。
+同一行插件用 `config.daemon: true` 分派到宿主半边，记忆那半边则按 `file` 分派。
 
 它在**宿主根作用域**提供一个 remote 服务 `whale-affinity`，浏览器半边（`lib/client.js`）
 用 `ctx.remote.$mount()` 挂上，再调 `status()` / `set(scope, value)`。
@@ -54,6 +62,28 @@
 `/好感度` 这种中文命令名**在宿主层面就不合法**；而且 `commands` 服务不在预设作用域里，
 `inject: ['commands']` 会让预设加载时一直等它（`waiting for commands`），把会话 resume 拖挂。
 设置页没有这两个限制。
+
+#### 取命名空间必须用 `ctx.inject()`，不能在服务对象上点
+
+`$mount()` 成功之后，网关注册的服务名就是 `remote.whale-affinity`（带点号）。
+它是**服务**，不是普通属性，所以：
+
+```js
+remote['whale-affinity']             // ✗ cannot get property "remote.whale-affinity" without inject
+ctx.inject(['remote.whale-affinity'], (child) => {
+  const gateway = child['remote.whale-affinity'];   // ✓
+});
+```
+
+原因是 cordis 的 get 陷阱（`cordis/lib/index.js:676`）对「不在 fiber.store 里、也没 inject」的属性
+一律抛那句报错，而服务上的 `tracker.associate` 会把 `remote['whale-affinity']` 重定向成
+`ctx['remote.whale-affinity']`。这个名字只有挂载后才存在，所以必须用**动态 inject** 等它出现
+（`verify-client-gateway-access.mjs` 用真实 cordis 正反两面都验过）。
+
+这一步的教训值得记：**自写的校验脚本曾在 `contribution` 形状上跟着源码一起写错
+（`methods` 而宿主读的是 `descriptors`），互相印证、永远绿。** 所以现在凡是对接宿主的字段，
+校验脚本都要拿宿主源码里真正读的那个名字来断言。
+
 
 ## 记忆功能
 
