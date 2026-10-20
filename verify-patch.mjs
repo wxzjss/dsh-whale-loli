@@ -84,7 +84,7 @@ const EXPECTED = [
     memoryFile: 'dsh-whale-daughter.md',
     variable: 'whale_memory_v4',
     tool: 'whale_memory_v4_add',
-    personaMarker: 'CORE_FAMILY',
+    personaMarker: '角色卡：小鱼 / 鲸鱼娘 / 爸爸的女儿',
   },
 ];
 

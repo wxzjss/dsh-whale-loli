@@ -80,6 +80,16 @@ export const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote
 /** `typertRemote` 的实例缓存（用 Symbol.for，跨 realm 也不会重复造对象）。 */
 const CACHE = Symbol.for('dsh-whale-loli.affinity-daemon.typertRemote');
 
+/**
+ * cordis 的隔离键表符号（`Symbol.for('cordis.isolate')`，见 cordis lib L44）。
+ *
+ * 只用来做诊断：`ctx.provide()` 把实现写进 `ctx.reflect.store[isolate[name]]`，
+ * 而 `ctx.get(name)` 再按同一个键取出来。两边的键若不是同一个 Symbol，
+ * 网关 `resolveSrcDescriptor()` 里的 `this.ctx.get(serviceKey)` 就会得到
+ * undefined，界面报「远程方法未挂载」，且宿主不报任何错。
+ */
+const symbolsReflect = { isolate: Symbol.for('cordis.isolate') };
+
 /** `<DSH_HOME>`，与 memory.js / affinity.js 同一套解析。 */
 function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
@@ -297,28 +307,128 @@ Object.defineProperty(AffinityDaemon.prototype, REMOTE_METHOD_DESCRIPTOR, {
  */
 export function apply(ctx) {
   trace('apply() 进入', { provide: typeof ctx?.provide, get: typeof ctx?.get, inject: inject.join(',') });
+
   if (typeof ctx?.provide !== 'function') {
     trace('ctx.provide 不可用，面板不会生效');
     return undefined;
   }
-  const existing = ctx.get?.(DAEMON_ID);
-  if (existing !== undefined) {
-    trace('服务已存在，复用', { key: DAEMON_ID });
-    return existing;
+
+  // ── 为什么不用 `ctx.provide()`，改用 `ctx.reflect.provide()` ────────────
+  //
+  // cordis 自己注册服务走的就是这一行（`Service` 构造函数末尾，lib/index.js）：
+  //     self.ctx.reflect.provide(name, self, this[symbols.check]);
+  // 官方所有服务（typertGateway 等）都是这么登记的。
+  //
+  // 曾经的写法是 `ctx.provide(DAEMON_ID, daemon)`，实测日志显示：
+  //     inProps=true  propsType="service"  storedIsDaemon=true
+  //     storedFiberState=1  myFiberState=1  selfLookup=false  selfLookupLoose=true
+  // 服务确实进表了（loose 查得到），但 strict 查找 `ctx.get(name)` 返回 undefined。
+  // `ReflectService._getImpl` 的判定是 `if (strict && impl.fiber.state !== 2) return;`
+  // —— 1 = Pending、2 = Active。也就是说：**提供者 fiber 必须已经 active**，
+  // 服务才对 strict 查找可见。
+  //
+  // 而网关 `resolveSrcDescriptor()`（dsh-api-gateway/lib/index.js:1234）正是
+  //     const receiver = this.ctx.get(serviceKey);
+  //     if (!isObject(receiver)) continue;
+  // strict 拿不到 → 整行跳过 → 最终抛
+  //     gateway/invocation-unavailable: no active Remote method exports this endpoint
+  // 浏览器侧把它显示成「远程方法 whale-affinity.status 未挂载」，而宿主一个错不报。
+  //
+  // 所以关键不是「provide 到哪张表」，而是「等 fiber 真的 active 之后再 provide」。
+  // `ctx.effect()` 的回调**同步执行**、执行时 fiber 仍是 Pending，因此不能只靠它。
+  // 这里同时用两条保险：
+  //   ① `ctx.reflect.provide`（与官方一致，写的是 ReflectService 自己的表）；
+  //   ② 在 `ctx.on('internal/status')` 里补登记 —— 一旦本 fiber 变成 active，
+  //      立刻再做一次 provide，保证网关那边能 strict 查到。
+  // ── 关键结论（纯 cordis 实测，`_probe9`）────────────────────────────
+  //
+  // 曾经的写法是在 apply() 里直接 `ctx.provide(DAEMON_ID, daemon)`。实测日志：
+  //     inProps=true  propsType="service"  loose=true
+  //     storedFiberState=1  myFiberState=1  selfLookup=false
+  // 对照 `ReflectService._getImpl`：
+  //     const impl = key && this.store[key];
+  //     if (!impl) return;
+  //     if (strict && impl.fiber.state !== 2) return;   // ← 1=Pending, 2=Active
+  // 结论：**服务写进表了，只是提供者 fiber 还没 active，strict 查找就看不见。**
+  // 而 fiber 变 active 之后 strict 自动成立 —— 实测 events：
+  //     [apply  state=1  loose=false → provide → loose=true]
+  //     [apply  after=provided  strictNow=false]
+  //     [fiber-active(1->2)  state=2  strict=true]
+  // 所以**不需要 provide 第二次**，也不需要跟 `internal/status` 斗智。
+  //
+  // 网关 `resolveSrcDescriptor()`（dsh-api-gateway/lib/index.js:1234）用的正是
+  //     const receiver = this.ctx.get(serviceKey);   // strict
+  //     if (!isObject(receiver)) continue;
+  // 宿主里日志停在 myFiberState=1，说明这一行 fiber 卡在 Pending 从没到 2。
+  // `_reload()` 的收尾是：
+  //     try { await Promise.resolve(); … await this._execute(this._runner); }
+  //     catch (reason) { this.ctx.logger.error(reason); this._runner.epoch = INACTIVE; }
+  // 也就是说：**apply 里抛出任何异常，fiber 就永远停在 Pending**（报错只进
+  // logger，界面上看不见）。所以这里的原则是「apply 绝不允许抛」——注册全程
+  // try/catch，失败只 trace 到盘上，让 fiber 正常走完 1 → 2。
+  const register = (why) => {
+    try {
+      const existing = ctx.get?.(DAEMON_ID) ?? ctx.reflect?.get?.(DAEMON_ID, false);
+      if (existing !== undefined) {
+        trace('服务已存在，复用', { key: DAEMON_ID, why });
+        return existing;
+      }
+      const daemon = new AffinityDaemon(ctx);
+      const via = typeof ctx.reflect?.provide === 'function' ? 'ctx.reflect.provide' : 'ctx.provide';
+      const provide =
+        via === 'ctx.reflect.provide' ? ctx.reflect.provide.bind(ctx.reflect) : ctx.provide.bind(ctx);
+      provide(DAEMON_ID, daemon);
+      trace('已 provide', {
+        why,
+        via,
+        inProps: Object.hasOwn(ctx.reflect?.props ?? {}, DAEMON_ID),
+        propsType: ctx.reflect?.props?.[DAEMON_ID]?.type,
+        selfLookup: ctx.get?.(DAEMON_ID) === daemon,
+        selfLookupLoose: ctx.reflect?.get?.(DAEMON_ID, false) === daemon,
+        myFiberState: ctx.fiber?.state,
+      });
+      return daemon;
+    } catch (error) {
+      trace('register 抛错（已吞，不能让它把 fiber 卡在 Pending）', {
+        why,
+        error: String(error?.message ?? error),
+      });
+      return undefined;
+    }
+  };
+
+  try {
+    ctx.effect(() => {
+      register('apply');
+      // 只做诊断：fiber 真的 active 之后确认 strict 已可见；不可见才补一次。
+      let off;
+      try {
+        off = ctx.on?.('internal/status', (fiber, oldState) => {
+          if (fiber?.uid !== ctx.fiber?.uid) return;
+          if (fiber.state !== 2) return;
+          try {
+            if (ctx.get?.(DAEMON_ID) === undefined) register(`fiber-active(${oldState}->2)`);
+            else trace('fiber 已 active，strict 可见', { why: `fiber-active(${oldState}->2)` });
+          } catch (error) {
+            trace('status 回调抛错（已吞）', { error: String(error?.message ?? error) });
+          }
+        });
+      } catch {
+        // 事件名变了也不影响主通道
+      }
+      return () => {
+        try {
+          off?.();
+        } catch {
+          // ignore
+        }
+      };
+    }, 'whale-affinity-daemon.provide');
+  } catch (error) {
+    trace('ctx.effect 抛错（已吞）', { error: String(error?.message ?? error) });
   }
 
-  const daemon = new AffinityDaemon(ctx);
-  // `provide` 会把 `ctx.reflect.props[DAEMON_ID]` 写成 `{ type: 'service' }`
-  // —— 这正是 `resolveSrcDescriptor()` 遍历时报的枚举来源。
-  ctx.provide(DAEMON_ID, daemon);
-  trace('已 provide', {
-    key: DAEMON_ID,
-    namespace: REMOTE_NAMESPACE,
-    inProps: Object.hasOwn(ctx.reflect?.props ?? {}, DAEMON_ID),
-    propsType: ctx.reflect?.props?.[DAEMON_ID]?.type,
-    selfLookup: ctx.get?.(DAEMON_ID) === daemon,
-  });
-  return daemon;
+  return undefined;
 }
 
 /**

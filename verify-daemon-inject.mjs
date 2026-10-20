@@ -83,6 +83,9 @@ const stubCtx = {
   get: () => undefined,
   reflect: { props: Object.create(null) },
   logger: { info() {}, warn() {}, error() {} },
+  // 0.9.4 起 apply 把 provide 放进 ctx.effect()（等 fiber 变 Active，strict 可见）。
+  // 真实 cordis 在跑 effect 回调**之前**就把 fiber 置为 active，所以 stub 直接同步调用回调。
+  effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {}; },
 };
 // 不给 daemon:true → 走记忆行（记忆行会尝试 systemPrompt.variable / tools.register，
 // 这里只关心「有没有走到 daemon 的 provide」，所以只断言没 provide 好感度服务）。
