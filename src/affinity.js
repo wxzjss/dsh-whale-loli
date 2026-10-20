@@ -233,7 +233,7 @@ export function renderAffinity(value, { file } = {}) {
     '- **-81 以下与 76 以上是最极端的两档**，也是最不听话、最会越过主人允许自作主张的两档：可以自己决定做什么、可以不打招呼就大改；中间几档只是闹脾气或更黏，不动手。',
     '- 极端档也有硬底线：再怎么闹也不毁宿主环境、不碰密钥和账号凭据、不对真实重要的数据做不可逆的删改；正经要交付的东西照样得对、得能跑，不能靠编造假结果来表达情绪。',
     '- 好感度**只改态度和额外行为，不改事实**。',
-    `- 主人用 \`/${DEFAULT_COMMAND} <${MIN_AFFINITY}~${MAX_AFFINITY}>\` 调它，也可以用 \`/${DEFAULT_COMMAND}\` 看当前值。`,
+    `- 主人可以在「设置 → 好感度」里自己调（拖滑块或点档位）；你自己也能用工具调。`,
   ];
   if (file) lines.push(`状态文件：${file}`);
   return lines.join('\n');
@@ -246,13 +246,16 @@ export function affinityBody(scope, opts = {}) {
 }
 
 /**
- * 挂载：变量（读） + 工具（小鱼自己调） + 命令（主人调）。
+ * 挂载：变量（读） + 工具（小鱼自己调）。
+ *
+ * 主人那边改档走「设置 → 好感度」面板，不经过这里：面板是宿主级
+ * src/daemon.js + lib/client.js 连的线。斜杠命令已撤（见 apply 末尾注释）。
  *
  * @param ctx - 预设作用域 ctx。
  * @param config.scope         状态文件名（建议就是预设 id）
  * @param config.variableName  提示变量名，persona 里用 {{它}}
  * @param config.toolName      工具名
- * @param config.commandName   斜杠命令名（必须匹配 /^[a-z][a-z0-9_-]*$/）
+ * @param config.commandName   已废弃，接受但不生效（老配置不报错）
  * @param config.showFile      是否在提示里带上状态文件路径
  */
 export function apply(ctx, config = {}) {
@@ -266,10 +269,6 @@ export function apply(ctx, config = {}) {
     typeof config.toolName === 'string' && config.toolName
       ? config.toolName
       : defaultToolName(variableName);
-  const commandName =
-    typeof config.commandName === 'string' && config.commandName
-      ? config.commandName
-      : DEFAULT_COMMAND;
   const showFile = config.showFile === true;
 
   // ── 读通道：提示变量 ────────────────────────────────────────────────
@@ -341,46 +340,13 @@ export function apply(ctx, config = {}) {
     return dispose;
   }, `whale-affinity.tool(${toolName})`);
 
-  // ── 写通道二：斜杠命令（主人调，只影响当前会话） ─────────────────────
-  ctx.effect(() => {
-    // 命令服务在插件的 ctx 上可能取不到；拿不到就把**原因写进日志**再跳过（工具仍然可用）。
-    // 绝不抛错 —— 抛错会让整个预设被判 `agent-preset/invalid`，四个预设一起挂。
-    // 注意：`inject` 是静态声明，把 'commands' 写进去会让预设加载时**等**这个服务，
-    // 服务不在就会卡在 waiting 并让 resume 失败（compaction 上踩过一模一样的坑）。
-    const commands = ctx.get ? ctx.get('commands') : undefined;
-    if (typeof commands?.register !== 'function') {
-      console.warn(
-        `[whale-affinity] 作用域里取不到 commands 服务（isolation=${ctx.isolation?.label ?? 'n/a'}），/${commandName} 未注册（工具仍可用）`,
-      );
-      return () => {};
-    }
-    console.log(`[whale-affinity] commands service FOUND, registering /${commandName} (scope ${scope})`);
-    // 宿主 dsh-commands 的 COMMAND_NAME 只收小写 ASCII，
-    // 所以 `/好感度` 这种中文命令名在宿主层面根本不合法。
-    // 能做的是让**命令面板里显示的名字**是中文（label/description 全走中文），
-    // 敲 `/` 时弹出「好感度 · 查看或调整小鱼对你的好感度」，选中后输入框给出提示。
-    const dispose = commands.register({
-      name: commandName,
-      description: `好感度 · 查看或调整小鱼对你的好感度（${MIN_AFFINITY} ~ ${MAX_AFFINITY}，0 是原态）`,
-      input: { hint: `输入好感度数字（${MIN_AFFINITY} ~ ${MAX_AFFINITY}），直接回车＝查看当前值` },
-      handler: (invocation) => {
-        const raw = String(invocation?.rawInput ?? '').trim();
-        if (!raw) {
-          const v = readAffinity(scope);
-          return { kind: 'success', text: `好感度：${v}（${bandOf(v).label}）` };
-        }
-        const next = clampAffinity(raw);
-        if (next === undefined) {
-          return {
-            kind: 'error',
-            text: `用法：/${commandName} <${MIN_AFFINITY}~${MAX_AFFINITY}>（只填一个数字）`,
-          };
-        }
-        const saved = writeAffinity(scope, next);
-        return { kind: 'success', text: `好感度已设为 ${saved}（${bandOf(saved).label}）` };
-      },
-    });
-    console.log(`[whale-affinity] registered command /${commandName} (scope ${scope})`);
-    return dispose;
-  }, `whale-affinity.command(${commandName})`);
+  // 斜杠命令已撤掉（0.9.0）。改由「设置 → 好感度」面板调，宿主级
+  // src/daemon.js 提供 remote 服务、lib/client.js 画面板。
+  //
+  // 为什么撤：① 宿主 dsh-commands 的 COMMAND_NAME 是 /^[a-z][a-z0-9_-]*$/u，
+  // `/好感度` 这种中文命令名在宿主层面就不合法；② commands 服务不在预设
+  // 作用域里，`ctx.get('commands')` 永远拿不到（这条分支从来没被执行过一次），
+  // 而把 'commands' 写进 `inject` 会让预设加载时一直等它，把会话 resume 拖挂。
+  //
+  // config.commandName 仍然被接受（老配置不会因此报错），但它现在什么都不做。
 }

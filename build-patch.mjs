@@ -49,15 +49,18 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
               detailLimit: ${memoryDetail}
           # 好感度：同样走提示变量（persona 是 complete:true）。
           # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
-          # 命令名 /affinity 四个预设一样，但命令是**每个会话各自注册**在 agent.ctx 上，
-          # 同一时刻只会有当前会话那一个，不会撞 "already registered"。
+          #
+          # 这里**没有 commandName**：好感度改由「设置 → 好感度」面板调
+          # （宿主级 whale-affinity-daemon + lib/client.js）。斜杠命令这条路走不通：
+          #   · dsh-commands 的命令名正则 /^[a-z][a-z0-9_-]*$/u，中文命令名直接非法；
+          #   · commands 服务不在预设作用域，inject:['commands'] 会让预设加载时
+          #     一直等它（waiting for commands），把会话 resume 拖挂。
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
               scope: ${presetId}
               variableName: ${affinityVariable}
               toolName: ${affinityTool}
-              commandName: affinity
               showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
@@ -133,7 +136,7 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个�
 #      把该预设自己的记忆文件注册成提示变量、并注册对应的写入工具，
 #      实现四套互不相通的跨会话记忆。
 #   3) 四条 \`dsh-whale-loli\` 好感度行 —— 各挂载本包 src/affinity.js 里的 whale-affinity，
-#      注册提示变量 + \`/affinity\` 命令 + 调整工具。
+#      注册提示变量 + 调整工具（主人改档走设置页面板，不走斜杠命令）。
 #   4) 一条 \`whale-affinity-daemon\` 行 —— 挂载 src/daemon.js，在**宿主根作用域**
 #      提供一个 remote 服务，让「设置 → 好感度」面板能读写四个预设的好感度文件。
 #      为什么必须落在宿主这边：设置页是浏览器里的 React，够不到 ~/.dsh 的磁盘；

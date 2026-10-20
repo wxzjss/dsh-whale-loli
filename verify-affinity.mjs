@@ -99,20 +99,22 @@ writeFileSync(join(home, 'affinity', 'broken.json'), '{not json', 'utf8');
 check('坏 JSON 退回默认 0', readAffinity('broken') === 0);
 check('缺文件退回默认 0', readAffinity('nope') === 0);
 
-// ── 8. 三条注册项 ──────────────────────────────────────────────────────
-function mockCtx({ withCommands = true, withTools = true } = {}) {
+// ── 8. 两条注册项 ──────────────────────────────────────────────────────
+function mockCtx({ withPrompt = true, withTools = true } = {}) {
   const reg = { variable: [], tool: [], command: [] };
   const ctx = {
     effect(fn) {
       const dispose = fn();
       return () => dispose?.();
     },
-    systemPrompt: {
-      variable: (n, p) => {
-        reg.variable.push({ name: n, provider: p });
-        return () => {};
-      },
-    },
+    systemPrompt: withPrompt
+      ? {
+          variable: (n, p) => {
+            reg.variable.push({ name: n, provider: p });
+            return () => {};
+          },
+        }
+      : undefined,
     tools: withTools
       ? {
           register: (t) => {
@@ -121,41 +123,31 @@ function mockCtx({ withCommands = true, withTools = true } = {}) {
           },
         }
       : undefined,
-    get: (n) =>
-      withCommands && n === 'commands'
-        ? {
-            register: (c) => {
-              reg.command.push(c);
-              return () => {};
-            },
-          }
-        : undefined,
+    // 故意不提供 commands：0.9.0 起好感度不再注册斜杠命令（改走设置页面板），
+    // 这里再给一个 commands 反而会让「有没有偷偷去注册」这件事测不出来。
+    get: () => undefined,
   };
   return { ctx, reg };
 }
 
 const { ctx, reg } = mockCtx();
-apply(ctx, { scope: 'rt', variableName: 'affinity_x', toolName: 'affinity_x_set', commandName: 'affinity' });
+apply(ctx, { scope: 'rt', variableName: 'affinity_x', toolName: 'affinity_x_set' });
 check('注册了提示变量', reg.variable.length === 1 && reg.variable[0].name === 'affinity_x');
 check('注册了工具', reg.tool.length === 1 && reg.tool[0].name === 'affinity_x_set');
-check('注册了命令', reg.command.length === 1 && reg.command[0].name === 'affinity');
-check('命令名匹配 /^[a-z][a-z0-9_-]*$/', /^[a-z][a-z0-9_-]*$/.test(reg.command[0].name));
+check('不再注册斜杠命令（改走设置页）', reg.command.length === 0);
 
 const body = reg.variable[0].provider();
 check('变量正文含当前值', body.includes('当前好感度：0'));
 check('变量正文含档位名', body.includes('原态'));
+check('变量正文不再教模型用 /affinity', !body.includes('/affinity'));
+check('变量正文指向设置页面板', body.includes('设置 → 好感度'));
 
-// 命令 handler
-const h = reg.command[0].handler;
-check('命令无参 → 报当前值', h({ rawInput: '' }).kind === 'success' && h({ rawInput: '' }).text.includes('好感度'));
-check('命令设值', h({ rawInput: '-100' }).kind === 'success' && readAffinity('rt') === -100);
-check('命令越界夹取', h({ rawInput: '999' }).kind === 'success' && readAffinity('rt') === 100);
-check('命令非法输入 → error', h({ rawInput: 'abc' }).kind === 'error');
+// 改档立即反映到变量（先经工具设值，再看变量正文）
+const out = await reg.tool[0].execute({ value: 100 });
+check('工具能设值', out.value === 100 && out.band === '病娇 · 爱到死去活来');
 check('改档立即反映到变量', reg.variable[0].provider().includes('病娇'));
-
-// 工具 execute
-const out = await reg.tool[0].execute({ value: 0 });
-check('工具能设值', out.value === 0 && out.band === '原态');
+const low = await reg.tool[0].execute({ value: -100 });
+check('工具能设负值', low.value === -100 && low.band === '不共戴天的仇人');
 check('工具参数 required 在对象层', JSON.stringify(reg.tool[0].parameters.required) === '["value"]');
 check('工具 output.schema required 在对象层', Array.isArray(reg.tool[0].output.schema.required));
 check(
@@ -164,14 +156,14 @@ check(
 );
 
 // ── 9. 缺服务不死 ──────────────────────────────────────────────────────
-const noCmd = mockCtx({ withCommands: false });
+const noPrompt = mockCtx({ withPrompt: false });
 let threw = false;
 try {
-  apply(noCmd.ctx, { scope: 'rt2' });
+  apply(noPrompt.ctx, { scope: 'rt2' });
 } catch {
   threw = true;
 }
-check('没有 commands 服务时不抛错', !threw);
+check('没有 systemPrompt.variable 时不抛错', !threw);
 
 const noTools = mockCtx({ withTools: false });
 threw = false;
@@ -187,5 +179,5 @@ check('affinity 目录在 DSH_HOME 下', affinityPath('x').startsWith(home));
 check('目录已建立', existsSync(join(home, 'affinity')));
 
 rmSync(home, { recursive: true, force: true });
-console.log(`\nRESULT: ${failed ? 'FAIL — ' + failed + ' 项' : 'PASS —— 好感度状态 / 分档 / 隔离 / 三通道注册都正常'}`);
+console.log(`\nRESULT: ${failed ? 'FAIL — ' + failed + ' 项' : 'PASS —— 好感度状态 / 分档 / 隔离 / 变量+工具注册都正常（命令已撤）'}`);
 process.exit(failed ? 1 : 0);
