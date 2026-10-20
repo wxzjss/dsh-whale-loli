@@ -29,7 +29,7 @@
  * 好处：`set()` 跑在**宿主根作用域**，直接改盘，下一个回合组装提示时就生效，
  * 不用重开会话。
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -55,23 +55,24 @@ export const REMOTE_NAMESPACE = 'whale-affinity';
 export const REMOTE_PACKAGE = 'dsh-whale-loli';
 
 /**
- * 静态依赖。
+ * 静态依赖：**一个都不要**。
  *
- * `inject` 是静态声明、拿不到 ctx，名字只能从 `@deepseek-ai/cordis` 的 `Service`
- * 基类上硬取；本包没有 cordis 这个 peer，所以用 `import()` 软探测，失败就退回
- * 字面量。**绝不能写不存在的服务名** —— 宿主会一直等，profile 直接起不来。
+ * 这里曾经是从 `@deepseek-ai/cordis` 的 `Service` 基类上硬抄来的
+ * `['reflect', 'typert']`，结果这一行永远 `waiting for typert`，`apply()`
+ * 从不执行，设置页只能看到「远程方法 whale-affinity.status 未挂载」。
+ *
+ * 实际上 daemon 只用三样东西，全都由 cordis 的 ctx 内建，不需要注入：
+ *   · `ctx.provide(name, value)` —— 注册服务本身；
+ *   · `ctx.get(name)`           —— 判重；
+ *   · `ctx.reflect.props`       —— 网关 `resolveSrcDescriptor()` 据此枚举服务。
+ *
+ * 注意 `typert` 是 `dsh-typert-registry` 提供的服务，**宿主根作用域里未必有**；
+ * 而我们的契约走的是 SRC 兜底（正则解析方法源码），本来就不经过 `ctx.typert`。
+ *
+ * 教训：`inject` 里写一个环境里不存在的服务名，插件不会被报错，只会静默地
+ * 永远等在 waiting 状态。
  */
-let SERVICE_INJECT;
-try {
-  const cordis = await import('@deepseek-ai/cordis');
-  const service = cordis?.Service?.prototype;
-  const table = cordis?.symbols;
-  const found = service && table ? service[table.inject] : undefined;
-  if (Array.isArray(found)) SERVICE_INJECT = found;
-} catch {
-  SERVICE_INJECT = undefined;
-}
-export const inject = SERVICE_INJECT ?? ['reflect', 'typert'];
+export const inject = [];
 
 /** typert-protocol 的常量值：固定字符串，硬编码省一个 peer 依赖。 */
 export const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-methods';
@@ -295,18 +296,44 @@ Object.defineProperty(AffinityDaemon.prototype, REMOTE_METHOD_DESCRIPTOR, {
  * @returns 实例；重复调用返回已有的那个（`remote.whale-affinity` 命名空间会撞车）。
  */
 export function apply(ctx) {
+  trace('apply() 进入', { provide: typeof ctx?.provide, get: typeof ctx?.get, inject: inject.join(',') });
   if (typeof ctx?.provide !== 'function') {
-    console.warn('[whale-affinity-daemon] ctx.provide 不可用，设置页的好感度面板不会生效');
+    trace('ctx.provide 不可用，面板不会生效');
     return undefined;
   }
   const existing = ctx.get?.(DAEMON_ID);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) {
+    trace('服务已存在，复用', { key: DAEMON_ID });
+    return existing;
+  }
 
   const daemon = new AffinityDaemon(ctx);
   // `provide` 会把 `ctx.reflect.props[DAEMON_ID]` 写成 `{ type: 'service' }`
   // —— 这正是 `resolveSrcDescriptor()` 遍历时报的枚举来源。
   ctx.provide(DAEMON_ID, daemon);
+  trace('已 provide', {
+    key: DAEMON_ID,
+    namespace: REMOTE_NAMESPACE,
+    inProps: Object.hasOwn(ctx.reflect?.props ?? {}, DAEMON_ID),
+    propsType: ctx.reflect?.props?.[DAEMON_ID]?.type,
+    selfLookup: ctx.get?.(DAEMON_ID) === daemon,
+  });
   return daemon;
+}
+
+/**
+ * 把启动事实追加到 `<DSH_HOME>/whale-affinity-daemon.log`。
+ *
+ * 宿主进程里 `console.log` 到底落到哪儿没人保证（Electron 主进程可能直接吞掉），
+ * 所以诊断信息一律写盘。只在 apply 时写几行，不碰热路径。
+ */
+function trace(message, extra) {
+  try {
+    const line = JSON.stringify({ at: new Date().toISOString(), message, ...(extra ?? {}) });
+    appendFileSync(join(dshHome(), 'whale-affinity-daemon.log'), line + '\n');
+  } catch {
+    // 诊断失败绝不能影响插件加载
+  }
 }
 
 export default { name, inject, apply };

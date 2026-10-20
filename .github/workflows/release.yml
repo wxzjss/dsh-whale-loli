@@ -70,6 +70,7 @@ jobs:
           node verify-tool-identity.mjs
           node verify-client.mjs
           node verify-client-discovery.mjs
+          node verify-daemon-inject.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -153,6 +154,13 @@ jobs:
           disc="$(node verify-client-discovery.mjs 2>&1)"
           echo "$disc"
           echo "$disc" | grep -q "RESULT: PASS"
+          # 守护进程那一行的 inject 必须能被满足。0.9.2 的故障：inject 里写了
+          # 'typert'（只有 dsh-typert-registry 挂载时才有），而用户的 profile 里
+          # 没有它 —— cordis 不报错，只是永远 waiting，apply() 一次都不执行，
+          # 设置页于是报「远程方法 whale-affinity.status 未挂载」。
+          dinj="$(node verify-daemon-inject.mjs 2>&1)"
+          echo "$dinj"
+          echo "$dinj" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 

@@ -183,9 +183,11 @@ export default {
   // 都挂在 `agent-preset/invalid` 上加载失败，而且报错只提插件名不提字段，
   // 极难定位。
   //
-  // 这一行是「记忆行」和「宿主级 daemon 行」**共用**的：两者都得声明齐。
-  // memory 只要 systemPrompt（预设里必然存在）；daemon 要 reflect / typert
-  // （宿主根作用域里必然存在）。两边的并集不会让任何一边等不到东西。
+  // 这一行是「记忆行」和「宿主级 daemon 行」**共用**的，两边都得能起来。
+  // memory 只要 systemPrompt（预设里必然存在）；daemon 现在声明为空
+  // （只用 ctx.provide / ctx.get / ctx.reflect，全是 cordis 内建）。
+  // 曾经 daemon 声明了 ['reflect','typert']，于是宿主那一行永远 waiting for
+  // typert、apply() 从不执行，设置页只报「远程方法未挂载」。
   inject: [...new Set([...memoryInject, ...daemonInject])],
   apply: applyEntry,
 };
