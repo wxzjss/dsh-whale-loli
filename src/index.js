@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { apply as applyMemory, inject as memoryInject, name as memoryName } from './memory.js';
 import { apply as applyAffinity, name as affinityName } from './affinity.js';
+import { apply as applyDaemon, inject as daemonInject } from './daemon.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
@@ -148,6 +149,28 @@ function apply(ctx, config = {}) {
   return applyMemory(ctx, config);
 }
 
+/**
+ * 宿主级那一行（`config.daemon: true`）挂的是好感度守护进程。
+ *
+ * 为什么非要挤进默认导出：宿主的 client-modules 只会扫描 `ctx.loader.entries()`
+ * 里那些 **specifier 本身能被解析成包** 的行（`exactPackageSpecifier` 只认
+ * 不带斜杠的裸名，或用 `createRequire().resolve('<spec>/package.json')` 能解到的
+ * subpath）。我们的 daemon 原先写成 `name: 'dsh-whale-loli/affinity-daemon'`，
+ * 而 `dsh-whale-loli/affinity-daemon/package.json` 解析不到
+ * （`ERR_PACKAGE_PATH_NOT_EXPORTED`），于是 `dsh.client` 永远不被发现，
+ * 「设置 → 好感度」那一栏也就永远不出现。
+ *
+ * 而预设里的那几行 `dsh-whale-loli` 又不在宿主根 Loader 的 entries 里
+ * （它们在预设自己的 scope 里），同样扫不到。
+ *
+ * 所以让宿主级那一行直接用裸包名 `dsh-whale-loli`，靠 `config.daemon` 分派到
+ * daemon —— 这样 specifier 解析得动，manifest 带 `dsh.client`，客户端被挂上。
+ */
+function applyEntry(ctx, config = {}) {
+  if (config?.daemon === true) return applyDaemon(ctx, config);
+  return applyMemory(ctx, config);
+}
+
 /** 好感度行（scope / variableName / toolName / commandName 由预设各自传入）。 */
 function applyAffinityRow(ctx, config = {}) {
   return applyAffinity(ctx, config);
@@ -155,12 +178,16 @@ function applyAffinityRow(ctx, config = {}) {
 
 export default {
   name: 'dsh-whale-loli',
-  // 注意：`inject` 是静态声明，只能写预设作用域里**一直存在**的服务名。
+  // 注意：`inject` 是静态声明，只能写作用域里**一直存在**的服务名。
   // 千万别把不存在的服务名写进来 —— 宿主会一直等它，结果是**所有**预设
   // 都挂在 `agent-preset/invalid` 上加载失败，而且报错只提插件名不提字段，
-  // 极难定位。现在的值是 `./memory.js` 里的 `inject`（只有必然存在的那个）。
-  inject: memoryInject,
-  apply,
+  // 极难定位。
+  //
+  // 这一行是「记忆行」和「宿主级 daemon 行」**共用**的：两者都得声明齐。
+  // memory 只要 systemPrompt（预设里必然存在）；daemon 要 reflect / typert
+  // （宿主根作用域里必然存在）。两边的并集不会让任何一边等不到东西。
+  inject: [...new Set([...memoryInject, ...daemonInject])],
+  apply: applyEntry,
 };
 
 // 让 `whale-memory` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。

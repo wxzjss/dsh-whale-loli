@@ -21,8 +21,18 @@
     # ── 好感度守护进程（宿主级，只挂一次）─────────────────────────────────
     # 设置页的面板用 ctx.remote.$mount() 挂到 REMOTE_NAMESPACE 上，
     # 再调 status() / set(scope, value)。落在宿主根作用域，只为了能直接改盘。
+    #
+    # ⚠️ name 必须是**裸包名**，不能写成 'dsh-whale-loli/affinity-daemon'。
+    #    宿主 client-modules 扫客户端 bundle 时只认 ctx.loader.entries() 里
+    #    specifier 解析得成包的行（不带斜杠的裸名，或
+    #    createRequire().resolve('<spec>/package.json') 解得动的 subpath）。
+    #    '.../affinity-daemon/package.json' 解不动（ERR_PACKAGE_PATH_NOT_EXPORTED），
+    #    dsh.client 就永远不被发现，「设置 → 好感度」也就永远不出现。
+    #    用裸包名 + config.daemon 分派（见 src/index.js 的 applyEntry）。
     - id: whale-affinity-daemon
-      name: 'dsh-whale-loli/affinity-daemon'
+      name: 'dsh-whale-loli'
+      config:
+        daemon: true
 
     # ── 预设一：鲸鱼娘Agent预设（原版）────────────────────────────────────
     - id: preset-鲸鱼娘Agent预设

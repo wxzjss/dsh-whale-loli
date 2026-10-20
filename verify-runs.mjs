@@ -28,19 +28,31 @@ const local = unique.filter((n) => n.startsWith('dsh-whale-loli'));
 const builtin = unique.filter((n) => n.startsWith('@deepseek-ai/') || n.startsWith('cordis:'));
 console.log('   本地入口:', local.join(', '));
 console.log('   内置包  :', builtin.length, '个');
-// 本地入口只允许这两个：主插件（记忆 + 好感度工具）与设置页的宿主半边。
-// 后者必须落在宿主根作用域，所以它在 patch 里是一条独立的挂载行。
+// 本地入口只允许一个 specifier：裸包名 `dsh-whale-loli`。
+// 它同时承担两个角色，靠 config.daemon 分派：
+//   · 预设里的行（无 daemon）→ src/memory.js / src/affinity.js
+//   · 宿主根作用域那条（daemon: true）→ src/daemon.js（设置页面板的宿主半边）
+// 之所以不能写成 'dsh-whale-loli/affinity-daemon'：宿主 client-modules 只扫
+// specifier 解析得成包的行，而 '<pkg>/affinity-daemon/package.json' 解不动
+// （ERR_PACKAGE_PATH_NOT_EXPORTED），dsh.client 就永远不被发现。
 const LOCAL_ENTRIES = {
   'dsh-whale-loli': './src/index.js',
-  'dsh-whale-loli/affinity-daemon': './src/daemon.js',
 };
 const unexpected = local.filter((spec) => LOCAL_ENTRIES[spec] === undefined);
 check(
-  '本地入口只有主插件 + 好感度守护进程',
+  '本地入口只有裸包名 dsh-whale-loli（不得出现子路径 specifier）',
   local.length === Object.keys(LOCAL_ENTRIES).length && unexpected.length === 0,
   `实际 [${local.join(',')}]`,
 );
+check(
+  '没有任何行用子路径 specifier 挂载本包',
+  !/name:\s*'dsh-whale-loli\//.test(patch),
+);
 check('好感度守护进程只挂一次（宿主级单例）', patch.split('- id: whale-affinity-daemon').length - 1 === 1);
+check(
+  '守护进程行用裸包名 + daemon:true 分派',
+  /- id: whale-affinity-daemon\n\s+name: 'dsh-whale-loli'\n\s+config:\n\s+daemon: true/.test(patch),
+);
 
 // 本地入口必须真的能 import
 for (const spec of local) {

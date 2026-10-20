@@ -69,6 +69,7 @@ jobs:
           node verify-tool-schema.mjs
           node verify-tool-identity.mjs
           node verify-client.mjs
+          node verify-client-discovery.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -143,6 +144,15 @@ jobs:
           client="$(node verify-client.mjs 2>&1)"
           echo "$client"
           echo "$client" | grep -q "RESULT: PASS"
+          # 宿主能不能**发现**客户端 bundle。0.9.1 之前设置页一直看不到「好感度」：
+          # 宿主 client-modules 只扫 ctx.loader.entries() 里 specifier 解析得成包的
+          # 行，而我们把守护进程写成了 'dsh-whale-loli/affinity-daemon'，它的
+          # package.json 解析不到（ERR_PACKAGE_PATH_NOT_EXPORTED），于是 dsh.client
+          # 永不被发现，而且宿主**不报任何错**。这里复刻宿主两段判定直接对着
+          # profile 安装态跑。
+          disc="$(node verify-client-discovery.mjs 2>&1)"
+          echo "$disc"
+          echo "$disc" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 
