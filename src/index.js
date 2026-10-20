@@ -149,6 +149,10 @@ function apply(ctx, config = {}) {
 
 export default {
   name: 'dsh-whale-loli',
+  // 注意：`inject` 是静态声明，只能写预设作用域里**一直存在**的服务名。
+  // 千万别把不存在的服务名写进来 —— 宿主会一直等它，结果是**所有**预设
+  // 都挂在 `agent-preset/invalid` 上加载失败，而且报错只提插件名不提字段，
+  // 极难定位。现在的值是 `./memory.js` 里的 `inject`（只有必然存在的那个）。
   inject: memoryInject,
   apply,
 };

@@ -579,7 +579,16 @@ export function apply(ctx, config = {}) {
   };
 
   // 主通道：变量。人设 prefix 里写 {{variableName}}，随 complete section 一起进提示。
-  ctx.effect(() => ctx.systemPrompt.variable(variableName, read), `whale-memory.variable(${variableName})`);
+  // 容错：少了 systemPrompt 服务时不能让整个预设被判 invalid（那会让四个预设全挂），
+  // 只在控制台留一句警告，写入工具照常注册。
+  ctx.effect(() => {
+    const prompt = ctx.systemPrompt;
+    if (typeof prompt?.variable !== 'function') {
+      console.warn(`[whale-memory] 当前作用域没有 systemPrompt.variable，记忆 ${file} 这一轮不会自动注入`);
+      return () => {};
+    }
+    return prompt.variable(variableName, read);
+  }, `whale-memory.variable(${variableName})`);
 
   /**
    * 写通道：把记忆注册成一个真工具，让 agent 自己往里加条目。
@@ -592,9 +601,14 @@ export function apply(ctx, config = {}) {
    * 挂在一个 scope 里也不会撞名；而且模型看到工具名就知道自己该写哪一份。
    */
   const toolName = typeof config.toolName === 'string' && config.toolName ? config.toolName : `${variableName}_add`;
-  ctx.effect(
-    () =>
-      ctx.tools.register({
+  // 容错同上：没有 tools 服务时只警告，不把预设判成 invalid。
+  ctx.effect(() => {
+    const tools = ctx.tools;
+    if (typeof tools?.register !== 'function') {
+      console.warn(`[whale-memory] 当前作用域没有 tools.register，写入工具 ${toolName} 未注册`);
+      return () => {};
+    }
+    return tools.register({
         name: toolName,
         description: [
           `把一句摘要追加到小鱼自己的记忆文件 ${file} 的「滚动摘要」区。`,
@@ -616,16 +630,20 @@ export function apply(ctx, config = {}) {
           required: ['summary'],
         },
         output: {
+          // 注意：dsh-tools 的 JSON-Schema 方言要求 `required` 是**对象层级**的
+          // 字符串数组，不能写在单个属性上（`{ type:'string', required:true }`
+          // 会被判成 unsupported JSON schema，整个预设加载失败）。
           schema: {
             type: 'object',
             additionalProperties: false,
             properties: {
-              id: { type: 'string', required: true },
-              path: { type: 'string', required: true },
-              count: { type: 'integer', required: true },
-              limit: { type: 'integer', required: true },
-              archived: { type: 'integer', required: true },
+              id: { type: 'string' },
+              path: { type: 'string' },
+              count: { type: 'integer' },
+              limit: { type: 'integer' },
+              archived: { type: 'integer' },
             },
+            required: ['id', 'path', 'count', 'limit', 'archived'],
           },
           render: (_args, value) => [
             {
@@ -647,9 +665,8 @@ export function apply(ctx, config = {}) {
           kind: 'other',
           rawInput: args.summary,
         }),
-      }),
-    `whale-memory.tool(${toolName})`,
-  );
+    });
+  }, `whale-memory.tool(${toolName})`);
 
   /**
    * 每轮结束（agent 转为 idle）时，把超出 turnLimit 的滚动条目**归档并瘦身文件**。

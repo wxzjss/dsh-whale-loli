@@ -90,5 +90,51 @@ console.log('\n=== 6. 四个预设的工具名互不相同 ===');
 const TOOL_NAMES = ['whale_memory_add', 'whale_memory_v2_add', 'whale_memory_v3_add', 'whale_memory_v4_add'];
 assert(new Set(TOOL_NAMES).size === TOOL_NAMES.length, '工具名可区分');
 
+console.log('\n=== 7. 工具 schema 用的是宿主认得的 JSON Schema 方言 ===');
+// 真实故障：曾经把 `required: true` 写在单个属性上，宿主报
+//   agent-preset/invalid: whale-memory unsupported JSON schema:
+//   schema.properties.id.required is not supported on type "string" ...
+// 结果不是这条工具坏掉，而是**所有预设**加载失败。所以这里逐条卡死。
+function checkSchema(node, path, problems) {
+  if (node === null || typeof node !== 'object') return;
+  if (Array.isArray(node)) return;
+  const type = node.type;
+  for (const [key, val] of Object.entries(node)) {
+    if (key === 'required') {
+      if (type !== undefined && !Array.isArray(val)) {
+        problems.push(`${path}.required 写在 type "${type}" 上，必须是对象层级的字符串数组`);
+      }
+      if (Array.isArray(val)) {
+        for (const name of val) {
+          if (!node.properties || !(name in node.properties)) {
+            problems.push(`${path}.required 里的 "${name}" 不在 properties 里`);
+          }
+        }
+      }
+      continue;
+    }
+    if (key === 'properties' && val && typeof val === 'object') {
+      for (const [prop, sub] of Object.entries(val)) checkSchema(sub, `${path}.properties.${prop}`, problems);
+      continue;
+    }
+  }
+  // 每个 type 都必须是自己认识的那几种
+  if (type !== undefined) {
+    const KNOWN = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null'];
+    for (const t of [].concat(type)) {
+      if (!KNOWN.includes(t)) problems.push(`${path}.type "${t}" 不是已知类型`);
+    }
+  }
+}
+const problems = [];
+checkSchema(tool.parameters, 'parameters', problems);
+checkSchema(tool.output.schema, 'output.schema', problems);
+assert(problems.length === 0, `schema 方言合法${problems.length ? ' —— ' + problems.join('; ') : ''}`);
+assert(Array.isArray(tool.output.schema.required) && tool.output.schema.required.length === 5,
+  'output.schema 的 required 是对象层级的 5 个字段');
+assert(!('required' in tool.output.schema.properties.id), '单属性上不再有 required:true');
+// 参数面（模型实际发的那一份）同样干净
+assert(JSON.stringify(tool.parameters.required) === '["summary"]', 'parameters.required = ["summary"]');
+
 rmSync(home, { recursive: true, force: true });
 console.log('\nRESULT:', process.exitCode ? 'FAIL' : 'PASS —— 记忆写入工具可用');

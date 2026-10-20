@@ -66,6 +66,7 @@ jobs:
           node verify-memory-rolling.mjs
           node verify-memory-archive.mjs
           node verify-live-assembly.mjs
+          node verify-tool-schema.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
