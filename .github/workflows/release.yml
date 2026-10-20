@@ -67,6 +67,8 @@ jobs:
           node verify-memory-archive.mjs
           node verify-live-assembly.mjs
           node verify-tool-schema.mjs
+          node verify-tool-identity.mjs
+          node verify-client.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -130,6 +132,17 @@ jobs:
           lst="$(node verify-listing.mjs 2>&1)"
           echo "$lst"
           echo "$lst" | grep -q "RESULT: PASS"
+          # 八个工具的定义互不共享：曾经出过好感度工具拿到记忆文案的事故
+          # （宿主把某一份定义按引用摊进了别的预设的请求头），这里用共享表
+          # 语义复刻一遍，任何一个描述串台就红。
+          ident="$(node verify-tool-identity.mjs 2>&1)"
+          echo "$ident"
+          echo "$ident" | grep -q "RESULT: PASS"
+          # 浏览器半边：设置页 section 能注册、$mount 负载过得了客户端浅校验、
+          # 面板渲染得出档位按钮，且全程没有 renderSlot / 裸 JSX / ESM 语句。
+          client="$(node verify-client.mjs 2>&1)"
+          echo "$client"
+          echo "$client" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 

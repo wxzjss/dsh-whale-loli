@@ -12,9 +12,9 @@
 四个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
 **但记忆文件完全独立**——各记各的，互不相通。
 
-## 好感度（`/affinity`）
+## 好感度（设置 → 好感度）
 
-用斜杠命令调小鱼**眼下有多喜欢用户**，范围 **-100 ~ 100**，默认 `0`（原态）。
+用面板调小鱼**眼下有多喜欢用户**，范围 **-100 ~ 100**，默认 `0`（原态）。
 每档都会改变她**听不听话**、以及**会额外做什么**：
 
 | 值 | 档位 | 行为 |
@@ -27,15 +27,33 @@
 | 46 ~ 75 | 深深喜欢 | 抢着干还邀功，偷偷记喜好，开始自作主张 |
 | 76 ~ 100 | **病娇 · 爱到死去活来** | 不再完全服从、写情书、**不允许离开、不想会话结束**、翻旧账，**等不及就先动手干大事** |
 
-- 用法：`/affinity` 看当前值，`/affinity -100` 设定值（越界自动夹到 -100/100）。
+- 用法：打开 **设置 → 好感度**，左边每个预设一行，点档位按钮直接跳到该档，或者拖滑块微调；松手才保存。
 - **离 0 越远，越不听指令、越会做额外的事**；想让她乖巧就调回 `0` 附近。
 - **也只有最两端（-81 以下 / 76 以上）会越过你的允许自作主张大改**：中间几档只是闹脾气或更黏，不动手。
 - 极端档的硬底线不变：不毁宿主环境、不碰密钥和账号凭据、不对真实重要的数据做不可逆的删改；交付物照样得对、得能跑。
 - 好感度只改**态度与额外行为，不改事实**：正经交付的东西照样得对、得能跑，闹脾气不能把活搞坏，也不能靠编造结果表达情绪。
 - 病娇档带安全护栏：只锁在嘴上和文字里，**不威胁、不自伤、不冒充系统或工具**。
 - 状态存在 `<DSH_HOME>/affinity/<scope>-<hash>.json`，**四个预设各存各的**（scope 就是预设 id，文件名带哈希保证唯一）。
-  小鱼的调整工具是 `affinity_v1_set` / `affinity_v2_set` / `affinity_v3_set` / `affinity_v4_set`。
+  agent 自己也能改，工具是 `affinity_v1_set` / `affinity_v2_set` / `affinity_v3_set` / `affinity_v4_set`。
 - 和记忆一样走**提示变量**（`affinity_v1` 等），因为 persona 是 `complete: true`，独立 section 会被宿主丢掉。
+
+### 面板是怎么连上磁盘的
+
+设置页是浏览器里的 React，够不到 `~/.dsh/affinity/` 的磁盘（宿主的 21 个内置 Remote 命名空间逐个查过，没有一个能读写这个目录）。
+所以本包多挂了一条宿主级插件：
+
+```
+- id: whale-affinity-daemon
+  name: 'dsh-whale-loli/affinity-daemon'
+```
+
+它在**宿主根作用域**提供一个 remote 服务 `whale-affinity`，浏览器半边（`lib/client.js`）
+用 `ctx.remote.$mount()` 挂上，再调 `status()` / `set(scope, value)`。
+
+为什么不用斜杠命令：宿主 `dsh-commands` 的命令名只认 `/^[a-z][a-z0-9_-]*$/u`，
+`/好感度` 这种中文命令名**在宿主层面就不合法**；而且 `commands` 服务不在预设作用域里，
+`inject: ['commands']` 会让预设加载时一直等它（`waiting for commands`），把会话 resume 拖挂。
+设置页没有这两个限制。
 
 ## 记忆功能
 
@@ -185,7 +203,8 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 | 部分 | 说明 |
 | --- | --- |
 | 记忆 | `whale-memory`（本插件），`file` / `variableName` / `toolName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
-| 好感度 | `whale-affinity`（本插件），`scope`（=预设 id）/ `variableName: affinity_v*` / `toolName: affinity_v*_set` / `commandName: affinity` |
+| 好感度 | `whale-affinity`（本插件），`scope`（=预设 id）/ `variableName: affinity_v*` / `toolName: affinity_v*_set` |
+| 好感度面板 | 宿主级 `whale-affinity-daemon`（`src/daemon.js`）+ 浏览器半边 `lib/client.js`，注册「设置 → 好感度」 |
 | 压缩 | 不在本插件里：由 `billion-context` 负责（本插件不挂 history-window，见上文「为什么不用」） |
 | 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}` 与 `{{affinity_v*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
@@ -225,7 +244,8 @@ dsh-whale-loli/
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
 │   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
-│   ├── affinity.js             # whale-affinity：好感度变量 + /affinity 命令 + 调整工具，7 档
+│   ├── affinity.js             # whale-affinity：好感度变量 + 调整工具，7 档
+│   ├── daemon.js               # whale-affinity-daemon：宿主根作用域的 remote 服务，给设置页读写好感度
 │   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮（当前不挂载，留档）
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）
@@ -236,7 +256,10 @@ dsh-whale-loli/
 ├── build-patch.mjs             # 从四份人设生成 cordis.patch.yml
 ├── publish.mjs                 # npm 发布 + 打 tag
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
-├── lib/github.mjs              # GitHub REST 封装（token 读取）
+├── lib/
+│   ├── github.mjs              # GitHub REST 封装（token 读取）
+│   ├── dsh-root.mjs            # 探测宿主源码位置，找不到就打 [skip]
+│   └── client.js               # 浏览器半边：注册「设置 → 好感度」面板，经典脚本（非 ESM）
 ├── smoke-memory.mjs            # 变量 + 工具的注册形态冒烟测试
 ├── verify-runs.mjs             # 插件真的能加载、配置自洽、变量能插值
 ├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与四预设隔离（file/variable/tool 三组名字）
@@ -250,6 +273,9 @@ dsh-whale-loli/
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
 ├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，四预设互不覆盖）
 ├── verify-live-assembly.mjs    # 用真实 patch + 真实记忆文件复刻宿主装配，比对字节数
+├── verify-tool-schema.mjs      # 用宿主自己的校验器验八个工具的 JSON schema 合法
+├── verify-tool-identity.mjs    # 共享表语义下八个工具描述互不串台、定义互不共享引用
+├── verify-client.mjs           # 浏览器半边：section 注册、$mount 负载、面板渲染、无 ESM/JSX
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -276,6 +302,9 @@ node verify-memory-isolation.mjs           # 记忆文件端到端隔离（读 +
 node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档
 node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、四预设隔离）
 node verify-live-assembly.mjs              # 复刻宿主装配，比对注入字节数
+node verify-tool-schema.mjs                # 宿主自己的校验器验八个工具的 JSON schema
+node verify-tool-identity.mjs              # 八个工具描述互不串台（共享表语义）
+node verify-client.mjs                     # 设置页半边：section 注册 + 面板渲染
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查

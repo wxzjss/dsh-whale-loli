@@ -5,9 +5,13 @@ import { pathToFileURL } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { requireDshRoot } from './lib/dsh-root.mjs';
+import { requireHostPackage } from './lib/dsh-root.mjs';
 
-const DSH = requireDshRoot('dsh-app-boot');
+// 真机用 `requireHostPackage`，而不是 `requireDshRoot`：后者只要找到
+// js-yaml 这种「够做结构校验」的根就返回，然后这一行去 import
+// dsh-app-boot 就 ERR_MODULE_NOT_FOUND —— 明明该 skip 却整脚本崩掉。
+// 只用真跑起来的宿主才有 dsh-app-boot（Desktop 版在 app.asar 里）。
+const DSH = requireHostPackage('dsh-app-boot（合成校验）');
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 const PROFILE = process.env.DSH_PROFILE_DIR || join(DSH_HOME, 'profiles', 'desktop');
 

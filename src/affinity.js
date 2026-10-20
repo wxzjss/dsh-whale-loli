@@ -34,6 +34,19 @@ export const name = 'whale-affinity';
  */
 export const inject = ['systemPrompt'];
 
+/**
+ * 每次调用 `apply()` 就换一份新表。
+ *
+ * 为什么必须新造：宿主把同一份工具定义对象按引用摊进四个预设的请求头，
+ * 一个 preset fiber 里注册的 `output.schema` / `description` 会被别的预设读到
+ * ——实测 v3 / v1 会话里 `affinity_v3_set`、`affinity_v1_set` 的描述都变成了
+ * 记忆工具那句「追加到 whale-loli.md 的「滚动摘要」区」。所以两个模块都改成
+ * 每次进场现造，不再共享任何模块级字面量。
+ */
+function defaultToolName(variableName) {
+  return variableName === DEFAULT_VARIABLE ? DEFAULT_TOOL : `${variableName}_set`;
+}
+
 export const MIN_AFFINITY = -100;
 export const MAX_AFFINITY = 100;
 export const DEFAULT_AFFINITY = 0;
@@ -250,7 +263,9 @@ export function apply(ctx, config = {}) {
       ? config.variableName
       : DEFAULT_VARIABLE;
   const toolName =
-    typeof config.toolName === 'string' && config.toolName ? config.toolName : DEFAULT_TOOL;
+    typeof config.toolName === 'string' && config.toolName
+      ? config.toolName
+      : defaultToolName(variableName);
   const commandName =
     typeof config.commandName === 'string' && config.commandName
       ? config.commandName
@@ -275,6 +290,8 @@ export function apply(ctx, config = {}) {
       return () => {};
     }
     console.log(`[whale-affinity] registering tool ${toolName} (scope ${scope})`);
+    // 定义整体现造：四个预设各自的 scope 互不相识，任何跨 apply() 复用的对象
+    // 都可能被宿主按引用摊进另一份请求头（见文件顶部 defaultToolName 的注释）。
     const dispose = tools.register({
       name: toolName,
       description: [

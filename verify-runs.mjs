@@ -28,11 +28,27 @@ const local = unique.filter((n) => n.startsWith('dsh-whale-loli'));
 const builtin = unique.filter((n) => n.startsWith('@deepseek-ai/') || n.startsWith('cordis:'));
 console.log('   本地入口:', local.join(', '));
 console.log('   内置包  :', builtin.length, '个');
-check('本地入口只含记忆插件', local.length === 1 && local[0] === 'dsh-whale-loli', `实际 [${local.join(',')}]`);
+// 本地入口只允许这两个：主插件（记忆 + 好感度工具）与设置页的宿主半边。
+// 后者必须落在宿主根作用域，所以它在 patch 里是一条独立的挂载行。
+const LOCAL_ENTRIES = {
+  'dsh-whale-loli': './src/index.js',
+  'dsh-whale-loli/affinity-daemon': './src/daemon.js',
+};
+const unexpected = local.filter((spec) => LOCAL_ENTRIES[spec] === undefined);
+check(
+  '本地入口只有主插件 + 好感度守护进程',
+  local.length === Object.keys(LOCAL_ENTRIES).length && unexpected.length === 0,
+  `实际 [${local.join(',')}]`,
+);
+check('好感度守护进程只挂一次（宿主级单例）', patch.split('- id: whale-affinity-daemon').length - 1 === 1);
 
 // 本地入口必须真的能 import
 for (const spec of local) {
-  const sub = spec === 'dsh-whale-loli' ? './src/index.js' : './src/history-window.js';
+  const sub = LOCAL_ENTRIES[spec];
+  if (sub === undefined) {
+    check(`${spec} 是已知的本地入口`, false);
+    continue;
+  }
   try {
     const m = await import(sub);
     check(`${spec} -> ${sub} 可 import`, typeof m.apply === 'function' || typeof m.default?.apply === 'function');

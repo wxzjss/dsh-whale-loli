@@ -10,10 +10,20 @@
 #      实现四套互不相通的跨会话记忆。
 #   3) 四条 `dsh-whale-loli` 好感度行 —— 各挂载本包 src/affinity.js 里的 whale-affinity，
 #      注册提示变量 + `/affinity` 命令 + 调整工具。
+#   4) 一条 `whale-affinity-daemon` 行 —— 挂载 src/daemon.js，在**宿主根作用域**
+#      提供一个 remote 服务，让「设置 → 好感度」面板能读写四个预设的好感度文件。
+#      为什么必须落在宿主这边：设置页是浏览器里的 React，够不到 ~/.dsh 的磁盘；
+#      宿主也没有任何内置 Remote 命名空间能读写 affinity 文件（全查过）。
 #
 # 记忆隔离要点：四条记忆行的 config.file / config.variableName / config.toolName
 # 都不一样，且分属不同预设 scope，所以四个记忆文件不会被读串或写串。
 - insert:
+    # ── 好感度守护进程（宿主级，只挂一次）─────────────────────────────────
+    # 设置页的面板用 ctx.remote.$mount() 挂到 REMOTE_NAMESPACE 上，
+    # 再调 status() / set(scope, value)。落在宿主根作用域，只为了能直接改盘。
+    - id: whale-affinity-daemon
+      name: 'dsh-whale-loli/affinity-daemon'
+
     # ── 预设一：鲸鱼娘Agent预设（原版）────────────────────────────────────
     - id: preset-鲸鱼娘Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
