@@ -56,18 +56,41 @@ console.log('profile user layer rows:', profilePatches.length);
 const composed = boot.composeEntries([units, profilePatches]);
 const rows = Array.isArray(composed) ? composed : (composed.entries ?? []);
 
-const whales = rows.filter((r) => r.id === 'preset-鲸鱼娘Agent预设');
-console.log('\n=== preset-鲸鱼娘Agent预设 rows after composition:', whales.length, '===');
-whales.forEach((r, i) => {
-  console.log(`  [${i}] row id=${r.id}  name=${r.name}`);
-  console.log(`      config.id=${r.config?.id}  config.name=${r.config?.name}`);
-  console.log(`      plugins=${(r.config?.plugins ?? []).map((p) => p.id).join(',')}`);
-});
+// 四个预设都要逐一看：每个 id 在合成后必须恰好一行。
+const { PRESETS } = await import('./src/index.js');
+let failed = 0;
+for (const p of PRESETS) {
+  const whales = rows.filter((r) => r.id === `preset-${p.id}`);
+  console.log(`\n=== preset-${p.id} rows after composition: ${whales.length} ===`);
+  whales.forEach((r, i) => {
+    console.log(`  [${i}] row id=${r.id}  name=${r.name}`);
+    console.log(`      config.id=${r.config?.id}  config.name=${r.config?.name}  order=${r.config?.order}`);
+    console.log(`      plugins=${(r.config?.plugins ?? []).map((x) => x.id).join(',')}`);
+  });
+  const ids = whales.map((r) => r.config?.id);
+  const dup = ids.filter((v, i) => ids.indexOf(v) !== i);
+  if (whales.length !== 1) {
+    failed++;
+    console.log(`  RESULT: 该预设合成后应恰好 1 行，实际 ${whales.length} 行`);
+  } else if (dup.length) {
+    failed++;
+    console.log(`  RESULT: DUPLICATE REGISTRATION -> ${dup[0]}`);
+  }
+}
 
-const ids = whales.map((r) => r.config?.id);
-const dup = ids.filter((v, i) => ids.indexOf(v) !== i);
+const order = PRESETS.map((p) => {
+  const r = rows.find((x) => x.id === `preset-${p.id}`);
+  return r?.config?.order ?? null;
+});
+const orders = order.filter((v) => typeof v === 'number');
+if (new Set(orders).size !== PRESETS.length) {
+  failed++;
+  console.log(`\norder 必须四个互不相同，实际 ${JSON.stringify(order)}`);
+}
+
 console.log(
-  dup.length
-    ? `RESULT: DUPLICATE REGISTRATION -> ${dup[0]}`
-    : 'RESULT: PASS (single registration)'
+  failed
+    ? `\nRESULT: FAIL (${failed} 个问题)`
+    : `\nRESULT: PASS (${PRESETS.length} 个预设各自单次注册，order 互不相同)`
 );
+process.exit(failed ? 1 : 0);
