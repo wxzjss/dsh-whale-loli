@@ -33,11 +33,13 @@ const writeCase = (c, body) =>
 
 for (const c of CASES) writeCase(c, c.body);
 
-/** 模拟宿主：变量经 systemPrompt.variable() 注册。 */
+/** 模拟宿主：变量经 systemPrompt.variable() 注册，工具经 tools.register() 注册。 */
 function makeCtx() {
   const vars = new Map();
+  const tools = new Map();
   return {
     vars,
+    tools,
     ctx: {
       systemPrompt: {
         getSectionOrder: () => 0,
@@ -49,13 +51,27 @@ function makeCtx() {
           throw new Error('不应注册 section（complete 预设里会被宿主丢掉）');
         },
       },
+      tools: {
+        register: (tool) => {
+          tools.set(tool.name, tool);
+          return () => {};
+        },
+      },
       effect: (fn) => fn(),
     },
   };
 }
 
 const scopes = CASES.map(() => makeCtx());
-CASES.forEach((c, i) => mod.apply(scopes[i].ctx, { ...c, maxChars: 16000, turnLimit: 80, detailLimit: 5 }));
+CASES.forEach((c, i) =>
+  mod.apply(scopes[i].ctx, {
+    ...c,
+    toolName: `${c.variableName}_add`,
+    maxChars: 16000,
+    turnLimit: 80,
+    detailLimit: 5,
+  }),
+);
 
 const names = scopes.map((s) => [...s.vars.keys()][0]);
 console.log('变量名 =', names.join(' | '));
@@ -74,6 +90,31 @@ check('三个变量名互不相同', new Set(names).size === 3);
 check('变量名都合法（[a-z][a-z0-9_]*）', names.every((n) => /^[a-z][a-z0-9_]*$/.test(n)));
 check('每个 scope 只注册 1 个变量', scopes.every((s) => s.vars.size === 1));
 
+// 写入工具：也是每 scope 一个，名字互不相同，且认自己的文件
+const toolNames = scopes.map((s) => [...s.tools.keys()][0]);
+console.log('写入工具 =', toolNames.join(' | '));
+check('三个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
+check('三个写入工具名互不相同', new Set(toolNames).size === 3);
+check(
+  '工具名 = <变量名>_add 且一一对应',
+  toolNames.every((n, i) => n === `${names[i]}_add`),
+);
+for (let i = 0; i < CASES.length; i++) {
+  const tool = scopes[i].tools.get(toolNames[i]);
+  const res = await tool.execute({ summary: `${CASES[i].tag}用工具记了一笔` });
+  check(
+    `${CASES[i].tag} 的工具写进自己的 ${CASES[i].file}`,
+    res.path.endsWith(CASES[i].file) && res.id === 'R0002',
+  );
+  const mine = scopes[i].vars.get(names[i])();
+  check(`${CASES[i].tag} 写完自己立即看得到`, mine.includes(`${CASES[i].tag}用工具记了一笔`));
+  const others = CASES.filter((_, j) => j !== i);
+  check(
+    `${CASES[i].tag} 写工具没串进别的文件`,
+    others.every((o) => !scopes[i].vars.get(names[i])().includes(`${o.tag}用工具记了一笔`)),
+  );
+}
+
 for (const [i, c] of CASES.entries()) {
   const others = CASES.filter((_, j) => j !== i);
   const leaked = others.filter((o) => texts[i].includes(o.body));
@@ -90,17 +131,17 @@ for (const [i, c] of CASES.entries()) {
 }
 
 // 反向：改第 i 个文件，只有第 i 个变量变
+const render = (i) => scopes[i].vars.get(names[i])();
 for (const [i, c] of CASES.entries()) {
-  const before = texts.slice();
+  const before = CASES.map((_, j) => render(j));
   const marker = `${c.tag}追加了一条新事实`;
   writeCase(c, marker);
-  const after = scopes.map((s) => [...s.vars.values()][0]());
+  const after = CASES.map((_, j) => render(j));
   check(`改 ${c.file} 后自己更新`, after[i].includes(marker));
   check(
     `改 ${c.file} 后另外两个完全不变`,
     CASES.every((_, j) => j === i || after[j] === before[j]),
   );
-  texts[i] = after[i];
 }
 
 // 只删一个文件，另外两个照常

@@ -54,8 +54,14 @@ import { basename, dirname, join } from 'node:path';
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'whale-memory';
 
-/** 需要 prompt registry。 */
-export const inject = ['systemPrompt'];
+/**
+ * 需要 prompt registry（读记忆）与 tool registry（写记忆）。
+ *
+ * `tools` 是后加的：早先只注册变量、不注册工具，于是人设里写着「每轮都要往
+ * 滚动摘要加一条」，agent 手里却没有笔 —— 实测新会话连聊十几轮，文件里一条
+ * 都没多。写入必须由 agent 主动调工具完成，所以这一项是硬依赖。
+ */
+export const inject = ['systemPrompt', 'tools'];
 
 /** 默认记忆文件名（放在 <DSH_HOME> 下）。 */
 export const DEFAULT_MEMORY_FILE = 'whale-loli.md';
@@ -574,6 +580,76 @@ export function apply(ctx, config = {}) {
 
   // 主通道：变量。人设 prefix 里写 {{variableName}}，随 complete section 一起进提示。
   ctx.effect(() => ctx.systemPrompt.variable(variableName, read), `whale-memory.variable(${variableName})`);
+
+  /**
+   * 写通道：把记忆注册成一个真工具，让 agent 自己往里加条目。
+   *
+   * 为什么需要它：变量通道只是「读」，agent 手里没有笔。人设里写着「每一轮都要往
+   * 滚动摘要加一条」，但没有任何可调用的写入口 —— 实测新会话聊十几轮，文件一条
+   * 都没多，记忆永远停在上一次手动写入的状态。写入是 agent 的职责，只能靠工具。
+   *
+   * 工具名带文件名后缀（whale_memory_add / whale_memory_v2_add / …），三个预设同时
+   * 挂在一个 scope 里也不会撞名；而且模型看到工具名就知道自己该写哪一份。
+   */
+  const toolName = typeof config.toolName === 'string' && config.toolName ? config.toolName : `${variableName}_add`;
+  ctx.effect(
+    () =>
+      ctx.tools.register({
+        name: toolName,
+        description: [
+          `把一句摘要追加到小鱼自己的记忆文件 ${file} 的「滚动摘要」区。`,
+          '',
+          `用途：平时说的每一轮短对话都记一条，长对话先精简概括再记。`,
+          `上限 ${turnLimit} 条，超出会自动归档，所以一条只写一句话，不要复述全文。`,
+          `固定记忆区不在这里写（那部分长期保留，不算在 ${turnLimit} 条以内）。`,
+          `只能写自己这一份（${file}），别写别的预设的记忆文件。`,
+        ].join('\n'),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            summary: {
+              type: 'string',
+              description: `一句话摘要（建议 6~60 字）。例如「主人说喜欢我，我害羞撒娇」。`,
+            },
+          },
+          required: ['summary'],
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', required: true },
+              path: { type: 'string', required: true },
+              count: { type: 'integer', required: true },
+              limit: { type: 'integer', required: true },
+              archived: { type: 'integer', required: true },
+            },
+          },
+          render: (_args, value) => [
+            {
+              type: 'text',
+              text: `已记下 ${value.id}（${value.count}/${value.limit} 条）${value.archived ? `，${value.archived} 条旧记录已归档` : ''}`,
+            },
+          ],
+        },
+        async execute(args) {
+          const summary = typeof args?.summary === 'string' ? args.summary.trim() : '';
+          if (!summary) throw new Error('summary 不能为空');
+          const { id, path, archived } = appendRolling(file, summary, { turnLimit, detailLimit });
+          const { roll } = parseMemory(readFileSync(path, 'utf8'));
+          return { id, path, count: roll.length, limit: turnLimit, archived };
+        },
+        presentCall: (args) => ({
+          card: 'generic',
+          title: '记一笔',
+          kind: 'other',
+          rawInput: args.summary,
+        }),
+      }),
+    `whale-memory.tool(${toolName})`,
+  );
 
   /**
    * 每轮结束（agent 转为 idle）时，把超出 turnLimit 的滚动条目**归档并瘦身文件**。

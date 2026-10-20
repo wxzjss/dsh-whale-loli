@@ -61,9 +61,11 @@ jobs:
           node verify-runs.mjs
           node verify-history-window.mjs
           node verify-memory-injection.mjs
+          node verify-memory-tool.mjs
           node verify-memory-isolation.mjs
           node verify-memory-rolling.mjs
           node verify-memory-archive.mjs
+          node verify-live-assembly.mjs
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -102,6 +104,15 @@ jobs:
           runs="$(node verify-runs.mjs 2>&1)"
           echo "$runs"
           echo "$runs" | grep -q "RESULT: PASS"
+          # 写入工具必须存在且真能落盘：只读通道再好，人设写着「每轮都记」
+          # 而手里没笔，记忆文件就永远是开天辟地那几条。
+          tool="$(node verify-memory-tool.mjs 2>&1)"
+          echo "$tool"
+          echo "$tool" | grep -q "RESULT: PASS"
+          if echo "$tool" | grep -q "\[skip\]"; then
+            echo "::error::verify-memory-tool 在 CI 里被跳过了，但它不该跳过"
+            exit 1
+          fi
           # 历史窗口真的按轮裁剪（不是靠人设文字）
           hw="$(node verify-history-window.mjs 2>&1)"
           echo "$hw"

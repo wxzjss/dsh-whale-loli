@@ -17,6 +17,7 @@ const check = (label, cond, extra = '') => {
 const P = join(dir, 'whale-loli.md');
 
 const vars = new Map();
+const tools = new Map();
 const sections = [];
 const ctx = {
   systemPrompt: {
@@ -27,6 +28,12 @@ const ctx = {
     },
     section: (s) => {
       sections.push(s);
+      return () => {};
+    },
+  },
+  tools: {
+    register: (tool) => {
+      tools.set(tool.name, tool);
       return () => {};
     },
   },
@@ -41,6 +48,8 @@ mod.apply(ctx, {});
 console.log('\n=== 注册形态 ===');
 check('注册了 1 个变量', vars.size === 1, `实际 ${vars.size}`);
 check('变量名 = whale_memory', vars.has('whale_memory'));
+check('注册了 1 个写入工具', tools.size === 1, `实际 ${tools.size}`);
+check('工具名 = whale_memory_add', tools.has('whale_memory_add'));
 check('没有注册 section（complete 预设里必被丢弃）', sections.length === 0);
 check('provider 是函数（每次组装重读盘）', typeof vars.get('whale_memory') === 'function');
 
@@ -73,6 +82,7 @@ check('骨架不含空小节标题', !skeleton.includes('## 任务目标\n\n\n')
 
 console.log('\n=== emitSection:true 才额外注册 section ===');
 const vars2 = new Map();
+const tools2 = new Map();
 const sections2 = [];
 mod.apply(
   {
@@ -81,19 +91,38 @@ mod.apply(
       variable: (n, p) => (vars2.set(n, p), () => {}),
       section: (s) => (sections2.push(s), () => {}),
     },
+    tools: { register: (t) => (tools2.set(t.name, t), () => {}) },
     effect: (fn) => fn(),
   },
   { emitSection: true, sectionName: 'custom-mem' },
 );
 check('变量仍注册', vars2.size === 1);
+check('工具仍注册', tools2.size === 1);
 check('section 也被注册', sections2.length === 1 && sections2[0].name === 'custom-mem');
 check('section 的 order < 0', sections2[0].order < 0);
 check('section interpolate=false', sections2[0].interpolate === false);
 
 console.log('\n=== disabled ===');
 const vars3 = new Map();
-mod.apply({ systemPrompt: { variable: (n, p) => (vars3.set(n, p), () => {}), getSectionOrder: () => 0 }, effect: (f) => f() }, { disabled: true });
-check('disabled 时什么都不注册', vars3.size === 0);
+const tools3 = new Map();
+mod.apply(
+  {
+    systemPrompt: { variable: (n, p) => (vars3.set(n, p), () => {}), getSectionOrder: () => 0 },
+    tools: { register: (t) => (tools3.set(t.name, t), () => {}) },
+    effect: (f) => f(),
+  },
+  { disabled: true },
+);
+check('disabled 时什么都不注册', vars3.size === 0 && tools3.size === 0);
+
+console.log('\n=== 写入工具真的能落盘 ===');
+writeFileSync(P, mod.memoryTemplate('whale-loli.md'), 'utf8');
+const res = await tools.get('whale_memory_add').execute({ summary: '冒烟测试写了一条' });
+check('返回 id 是 R0001', res.id === 'R0001', JSON.stringify(res));
+check('文件里出现这条', readFileSync(P, 'utf8').includes('冒烟测试写了一条'));
+const reread = read();
+check('变量立刻读得到新条目', reread.includes('冒烟测试写了一条') && reread.includes('R0001'));
+check('计数变成 1/80', reread.includes('/80'));
 
 rmSync(dir, { recursive: true, force: true });
 console.log('\n' + (ok ? 'SMOKE OK' : 'SMOKE FAIL'));

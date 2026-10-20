@@ -52,6 +52,7 @@ function countRoll(file) {
 /** 用假 ctx 跑 apply，并手动触发 agent/status idle。 */
 function mount(file, variableName) {
   const vars = new Map();
+  const tools = new Map();
   const listeners = new Map();
   const ctx = {
     get: () => undefined,
@@ -59,6 +60,12 @@ function mount(file, variableName) {
     on: (name, cb) => {
       listeners.set(name, cb);
       return () => {};
+    },
+    tools: {
+      register: (tool) => {
+        tools.set(tool.name, tool);
+        return () => {};
+      },
     },
     systemPrompt: {
       variable: (n, p) => {
@@ -71,8 +78,8 @@ function mount(file, variableName) {
       getSectionOrder: () => 0,
     },
   };
-  mod.apply(ctx, { file, variableName, turnLimit: 80, detailLimit: 5 });
-  return { vars, listeners };
+  mod.apply(ctx, { file, variableName, toolName: `${variableName}_add`, turnLimit: 80, detailLimit: 5 });
+  return { vars, tools, listeners };
 }
 
 console.log('=== 1. 85 条 → 一轮结束后归档 5 条、文件瘦到 80 ===');

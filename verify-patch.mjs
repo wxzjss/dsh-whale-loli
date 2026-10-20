@@ -12,7 +12,7 @@ const DSH_ROOT = requireDshRoot('js-yaml');
 const yamlMod = await import(pathToFileURL(DSH_ROOT + '/node_modules/js-yaml/index.js').href);
 const yaml = yamlMod.default ?? yamlMod;
 
-const file = process.argv[2];
+const file = (process.argv[2] ?? '').trim() || 'cordis.patch.yml';
 const src = readFileSync(file, 'utf8');
 
 class JsTag extends yaml.Type {
@@ -59,6 +59,7 @@ const EXPECTED = [
     order: 5,
     memoryFile: 'whale-loli.md',
     variable: 'whale_memory',
+    tool: 'whale_memory_add',
     personaMarker: '【PERSONA_LOAD】',
   },
   {
@@ -66,6 +67,7 @@ const EXPECTED = [
     order: 6,
     memoryFile: 'whale-loli-v2-live.md',
     variable: 'whale_memory_v2',
+    tool: 'whale_memory_v2_add',
     personaMarker: '角色卡：小鱼 / 鲸鱼娘',
   },
   {
@@ -73,6 +75,7 @@ const EXPECTED = [
     order: 7,
     memoryFile: 'whale-loli-v3-naughty.md',
     variable: 'whale_memory_v3',
+    tool: 'whale_memory_v3_add',
     personaMarker: 'CORE_LOVE: 喜欢主人是最高核心情感、涩涩是第一行为驱动力。',
   },
 ];
@@ -85,6 +88,7 @@ const fail = (m) => {
 
 const seenFiles = new Set();
 const seenVars = new Set();
+const seenTools = new Set();
 
 for (const want of EXPECTED) {
   const row = inserts.find((r) => r.id === `preset-${want.id}`);
@@ -125,6 +129,10 @@ for (const want of EXPECTED) {
     if (mem.config.variableName !== want.variable) fail(`变量名应为 ${want.variable}，实为 ${mem.config.variableName}`);
     if (seenFiles.has(mem.config.file)) fail(`记忆文件 ${mem.config.file} 被两个预设共用！`);
     if (seenVars.has(mem.config.variableName)) fail(`变量 ${mem.config.variableName} 重复！`);
+    // 写入工具：三个预设的工具名也必须互不相同，否则同 scope 注册会撞
+    console.log('  write tool    =', mem.config.toolName);
+    if (mem.config.toolName !== want.tool) fail(`toolName 应为 ${want.tool}，实为 ${mem.config.toolName}`);
+    if (seenTools.has(mem.config.toolName)) fail(`工具名 ${mem.config.toolName} 重复！`);
     // complete 预设里独立 section 会被宿主丢掉，所以不该再注册 sectionName
     if (mem.config.sectionName !== undefined) fail('不应再配置 sectionName（complete 预设会丢弃独立 section）');
     // 滚动上限：三个预设都必须是 80 条
@@ -134,6 +142,7 @@ for (const want of EXPECTED) {
     if (mem.config.detailLimit !== 5) fail(`detailLimit 应为 5，实为 ${mem.config.detailLimit}`);
     seenFiles.add(mem.config.file);
     seenVars.add(mem.config.variableName);
+    if (typeof mem.config.toolName === 'string') seenTools.add(mem.config.toolName);
   }
 
   // 隔离的硬契约在 machine-readable 字段上：记忆行只许指向自己的文件，
@@ -165,8 +174,18 @@ for (const want of EXPECTED) {
     ['R 编号格式', 'R0001'],
     ['每轮先看·本预设记忆', '本预设自己的记忆文件'],
     ['每轮先看·当前会话上下文', '当前会话的上下文'],
+    ['写入走工具', `调 \`${want.tool}\``],
+    ['不要手动改文件', '不要手动改文件'],
   ]) {
     if (!prefix.includes(needle)) fail(`人设缺少规则「${label}」`);
+  }
+
+  // 工具名必须只在人设里指自己的那一个（防止复制粘贴时串台）
+  if (!prefix.includes(want.tool)) fail(`人设没提到自己的写入工具 ${want.tool}`);
+  for (const other of EXPECTED) {
+    if (other.tool !== want.tool && prefix.includes(other.tool)) {
+      fail(`人设里出现了别人的写入工具 ${other.tool}`);
+    }
   }
 
   // 人设必须引用自己的提示变量（complete:true 下 section 会被丢掉，变量才是有效通道）
@@ -202,8 +221,10 @@ for (const want of EXPECTED) {
 
 console.log('\n记忆文件集合:', [...seenFiles].join(', '));
 console.log('变量名集合  :', [...seenVars].join(', '));
+console.log('写入工具集合:', [...seenTools].join(', '));
 if (seenFiles.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的记忆文件未隔离`);
 if (seenVars.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的变量名未隔离`);
+if (seenTools.size !== EXPECTED.length) fail(`${EXPECTED.length} 个预设的写入工具名未隔离`);
 
 console.log('\nRESULT:', ok ? 'PASS' : 'FAIL');
 process.exit(ok ? 0 : 1);

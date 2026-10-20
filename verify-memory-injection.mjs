@@ -10,9 +10,9 @@ function assert(cond, label) {
 const patch = readFileSync('cordis.patch.yml', 'utf8');
 
 console.log('=== 1. patch 里三条记忆行都用 variableName，不再是 sectionName ===');
-const rows = [...patch.matchAll(/file: (\S+)\n\s+variableName: (\S+)\n\s+maxChars: (\d+)\n\s+turnLimit: (\d+)\n\s+detailLimit: (\d+)/g)];
+const rows = [...patch.matchAll(/file: (\S+)\n\s+variableName: (\S+)\n\s+toolName: (\S+)\n\s+maxChars: (\d+)\n\s+turnLimit: (\d+)\n\s+detailLimit: (\d+)/g)];
 assert(rows.length === 3, `记忆行 = 3（实际 ${rows.length}）`);
-for (const r of rows) console.log(`     ${r[1]} -> {{${r[2]}}} maxChars=${r[3]} turn=${r[4]} detail=${r[5]}`);
+for (const r of rows) console.log(`     ${r[1]} -> {{${r[2]}}} tool=${r[3]} maxChars=${r[4]} turn=${r[5]} detail=${r[6]}`);
 
 console.log('\n=== 2. 每条人设都引用了自己的变量，且只引用自己的 ===');
 const want = { 'whale-loli.md': 'whale_memory', 'whale-loli-v2-live.md': 'whale_memory_v2', 'whale-loli-v3-naughty.md': 'whale_memory_v3' };

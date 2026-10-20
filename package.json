@@ -1,7 +1,7 @@
 {
   "name": "dsh-whale-loli",
-  "version": "0.5.12",
-  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆（提示变量通道，per-preset 独立文件）。上下文压缩交给 billion-context 插件；本插件不挂 history-window（预设作用域取不到宿主的 compaction 服务，挂载会拖挂会话 resume）。",
+  "version": "0.6.0",
+  "description": "鲸鱼娘 Agent 预设（三个）— 极简模式工具面 + 鲸鱼娘·小鱼人设 + 跨会话长期记忆（四区格式：固定记忆永久、滚动摘要 80 条 FIFO、最近详细区、归档索引）。记忆读写各一条通道：提示变量负责每轮注入，专用工具 whale_memory*_add 负责让她自己记，per-preset 独立文件互不相通。上下文压缩交给 billion-context 插件；本插件不挂 history-window（预设作用域取不到宿主的 compaction 服务，挂载会拖挂会话 resume）。",
   "type": "module",
   "license": "MIT",
   "keywords": [

@@ -40,6 +40,7 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
             config:
               file: ${memoryFile}
               variableName: ${memoryVariable}
+              toolName: ${memoryVariable}_add
               maxChars: ${memoryMax}
               turnLimit: ${memoryTurns}
               detailLimit: ${memoryDetail}

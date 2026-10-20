@@ -5,9 +5,9 @@
   "name": "wxzjss/dsh-whale-loli",
   "category": "identity",
   "description": {
-    "en": "Agent presets packaged as a plugin: installing it registers \"鲸鱼娘Agent预设\", \"鲸鱼娘活人版Agent预设\" and \"鲸鱼娘涩涩版Agent预设\" (Whale Girl) in the Agent preset list, so any of them can be picked from the mode dropdown with no hand-edited config. Each preset is the official minimal composition (shell only) plus file tools, a whale-girl persona and its own persistent memory file, injected as a prompt section so it is read before the first reply.",
-    "zh": "把 Agent 预设打包成插件：装上就会在 Agent 预设列表里注册「鲸鱼娘Agent预设」「鲸鱼娘活人版Agent预设」和「鲸鱼娘涩涩版Agent预设」，直接在模式下拉里选用，不用手改配置。每个预设本体是官方极简模式（只开放 shell）+ 文件工具 + 鲸鱼娘人设 + 自己那份持久记忆文件，以提示段形式注入，开口前就已经读过。"
+    "en": "Agent presets packaged as a plugin: installing it registers \"鲸鱼娘Agent预设\", \"鲸鱼娘活人版Agent预设\" and \"鲸鱼娘涩涩版Agent预设\" (Whale Girl) in the Agent preset list, so any of them can be picked from the mode dropdown with no hand-edited config. Each preset is the official minimal composition (shell only) plus file tools, a whale-girl persona and its own persistent memory file, injected as a prompt variable so it is read before the first reply. Each preset also ships a dedicated write tool (whale_memory_add / whale_memory_v2_add / whale_memory_v3_add) that appends one-line rolling summaries, so the memory keeps growing instead of freezing at whatever was written by hand.",
+    "zh": "把 Agent 预设打包成插件：装上就会在 Agent 预设列表里注册「鲸鱼娘Agent预设」「鲸鱼娘活人版Agent预设」和「鲸鱼娘涩涩版Agent预设」，直接在模式下拉里选用，不用手改配置。每个预设本体是官方极简模式（只开放 shell）+ 文件工具 + 鲸鱼娘人设 + 自己那份持久记忆文件，以提示变量形式注入，开口前就已经读过；另外每个预设各配一个专用写入工具（whale_memory_add / whale_memory_v2_add / whale_memory_v3_add），用来把每轮的一行摘要追加进去，记忆会自己长，不会停在手写那几条。"
   },
   "npm": "dsh-whale-loli",
-  "version": "0.2.6"
+  "version": "0.6.0"
 }
