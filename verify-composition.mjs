@@ -65,29 +65,43 @@ for (const p of presets) byId.set(p.config.id, [...(byId.get(p.config.id) ?? [])
 
 console.log('\nagent-preset rows:', presets.length);
 const memFiles = new Set();
-const memSections = new Set();
+const memVars = new Set();
+const memTools = new Set();
 for (const [id, list] of byId) {
   const mem = list[0].config.plugins?.find((p) => p.id === 'whale-memory');
-  const tag = mem ? `file=${mem.config.file} section=${mem.config.sectionName}` : '(no whale-memory)';
+  const tag = mem
+    ? `file=${mem.config.file} variable=${mem.config.variableName} tool=${mem.config.toolName}`
+    : '(no whale-memory)';
   console.log(`  ${id}: ${list.length} row(s)  ${tag}`);
   if (mem) {
     if (memFiles.has(mem.config.file)) console.log(`    !! 记忆文件重复: ${mem.config.file}`);
-    if (memSections.has(mem.config.sectionName)) console.log(`    !! section 重复: ${mem.config.sectionName}`);
+    if (memVars.has(mem.config.variableName)) console.log(`    !! 变量名重复: ${mem.config.variableName}`);
+    if (memTools.has(mem.config.toolName)) console.log(`    !! 写入工具名重复: ${mem.config.toolName}`);
+    // complete 预设里独立 section 会被宿主丢掉 —— 配了也是死配置
+    if (mem.config.sectionName !== undefined) console.log(`    !! 不应配置 sectionName: ${mem.config.sectionName}`);
     memFiles.add(mem.config.file);
-    memSections.add(mem.config.sectionName);
+    memVars.add(mem.config.variableName);
+    memTools.add(mem.config.toolName);
   }
 }
 
+const EXPECTED_PRESETS = [
+  '鲸鱼娘Agent预设',
+  '鲸鱼娘活人版Agent预设',
+  '鲸鱼娘涩涩版Agent预设',
+  '鲸鱼娘女儿版Agent预设',
+];
+const missing = EXPECTED_PRESETS.filter((id) => !byId.has(id));
 const both =
-  byId.has('鲸鱼娘Agent预设') &&
-  byId.has('鲸鱼娘活人版Agent预设') &&
-  byId.has('鲸鱼娘涩涩版Agent预设') &&
-  memFiles.size === 3 &&
-  memSections.size === 3 &&
+  missing.length === 0 &&
+  memFiles.size === EXPECTED_PRESETS.length &&
+  memVars.size === EXPECTED_PRESETS.length &&
+  memTools.size === EXPECTED_PRESETS.length &&
   dupes.length === 0;
 
-console.log('\n三个预设都在:', both && byId.size >= 3);
+console.log('\n四个预设都在:', missing.length === 0, missing.length ? '缺少 ' + missing.join('、') : '');
 console.log('记忆文件数:', memFiles.size, '|', [...memFiles].join(', '));
-console.log('section 数 :', memSections.size, '|', [...memSections].join(', '));
+console.log('变量名数  :', memVars.size, '|', [...memVars].join(', '));
+console.log('写入工具数:', memTools.size, '|', [...memTools].join(', '));
 console.log('\nRESULT:', both ? 'PASS' : 'FAIL');
 process.exit(both ? 0 : 1);

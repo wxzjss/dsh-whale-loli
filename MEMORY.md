@@ -1,12 +1,13 @@
 # 记忆文件格式与规则
 
-三个预设各有一份独立记忆文件，格式**完全相同**，规则也相同：
+四个预设各有一份独立记忆文件，格式**完全相同**，规则也相同：
 
 | 预设 | 记忆文件 | 提示变量名 | 写入工具名 | 归档目录 |
 | --- | --- | --- | --- | --- |
 | 鲸鱼娘Agent预设 | `<DSH_HOME>/whale-loli.md` | `whale_memory` | `whale_memory_add` | `archive/whale-loli/` |
 | 鲸鱼娘活人版Agent预设 | `<DSH_HOME>/whale-loli-v2-live.md` | `whale_memory_v2` | `whale_memory_v2_add` | `archive/whale-loli-v2-live/` |
 | 鲸鱼娘涩涩版Agent预设 | `<DSH_HOME>/whale-loli-v3-naughty.md` | `whale_memory_v3` | `whale_memory_v3_add` | `archive/whale-loli-v3-naughty/` |
+| 鲸鱼娘女儿版Agent预设 | `<DSH_HOME>/dsh-whale-daughter.md` | `whale_memory_v4` | `whale_memory_v4_add` | `archive/dsh-whale-daughter/` |
 
 **读写是对称的两条通道**：`variable` 负责每轮把内容塞进系统提示（读），`tools` 负责让她自己往滚动摘要里添（写）。
 两条都必须存在 —— 只读的话，人设写着「每轮都要记」，她手里却没有笔。
@@ -82,7 +83,7 @@
 ## 填写规则（人设里也写了同一套）
 
 1. **每一轮都要往「滚动摘要」加一条**，不是挑着记。
-2. **用工具写，不要手动编辑文件**：调 `whale_memory_add`（活人版 `whale_memory_v2_add`、涩涩版 `whale_memory_v3_add`），
+2. **用工具写，不要手动编辑文件**：调 `whale_memory_add`（活人版 `whale_memory_v2_add`、涩涩版 `whale_memory_v3_add`、女儿版 `whale_memory_v4_add`），
    只传 `summary` 一句话。编号、`(N/80)` 计数、超限归档全部由工具负责。
 3. 短对话直接照实记；**长对话先精简概括再记**，压成一两句说清「聊了什么、结论是什么」。
 4. 一条 6~60 字，写「发生了什么 + 情绪/结论」，别复述全文。
@@ -106,7 +107,7 @@
 - `archived > 0` 表示这次写入挤掉了旧条目，已落到 `archive/<预设名>/YYYY-MM-DD.md`。
 - 空 `summary` 直接抛错，不会写进半条空记录。
 
-三份记忆的写工具名字互不相同，所以即使三个预设同时活跃也不会互相污染 —— 
+四份记忆的写工具名字互不相同，所以即使四个预设同时活跃也不会互相污染 —— 
 `verify-memory-isolation.mjs` 会让每个工具各写一笔，断言只有自己的文件变了。
 
 ## 每轮先看什么
@@ -161,8 +162,8 @@ sections: completeSection === void 0 ? transformed.sections : [completeSection]
 node verify-memory-injection.mjs   # 变量通道有效 / section 通道被丢弃
 node verify-memory-tool.mjs        # 写入工具可用：编号、计数、落盘、详细区同步
 node verify-memory-rolling.mjs     # 四区解析 + 80 条滚动 + 归档 + 旧格式兼容
-node verify-memory-isolation.mjs   # 三个文件互不相通（读 + 写都验）
-node verify-memory-archive.mjs     # 超 80 条自动归档、三个归档目录互不覆盖
+node verify-memory-isolation.mjs   # 四个文件互不相通（读 + 写都验）
+node verify-memory-archive.mjs     # 超 80 条自动归档、四个归档目录互不覆盖
 node verify-live-assembly.mjs      # 用真实 patch + 真实记忆文件复刻宿主装配
 node smoke-memory.mjs              # 变量与工具的注册形态 / 读盘即时生效
 node verify-patch.mjs cordis.patch.yml   # patch 里的 variableName/toolName/turnLimit 与规则文案

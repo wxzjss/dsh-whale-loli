@@ -1,5 +1,5 @@
-// 端到端隔离证明：给三个预设各挂一次 whale-memory（**变量通道**），
-// 断言三条记忆各自只读到自己的文件，绝不串。
+// 端到端隔离证明：给四个预设各挂一次 whale-memory（**变量通道**），
+// 断言四条记忆各自只读到自己的文件，绝不串。
 //
 // 为什么是变量：persona 是 complete:true，宿主 assemble() 会把最终提示替换成
 // 只剩那一个 section，独立注册的 section 永远进不去（见 src/memory.js 顶部注释）。
@@ -12,7 +12,7 @@ process.env.DSH_HOME = home;
 
 const mod = await import('./src/memory.js');
 
-// 与 patch 里三条记忆行的 config 完全一致
+// 与 patch 里四条记忆行的 config 完全一致
 const CASES = [
   { file: 'whale-loli.md', variableName: 'whale_memory', body: '普通版：主人爱喝冰美式。', tag: '普通版' },
   { file: 'whale-loli-v2-live.md', variableName: 'whale_memory_v2', body: '活人版：主人怕黑。', tag: '活人版' },
@@ -21,6 +21,12 @@ const CASES = [
     variableName: 'whale_memory_v3',
     body: '涩涩版：主人喜欢被主动黏。',
     tag: '涩涩版',
+  },
+  {
+    file: 'dsh-whale-daughter.md',
+    variableName: 'whale_memory_v4',
+    body: '女儿版：爸爸答应带我去看海。',
+    tag: '女儿版',
   },
 ];
 
@@ -86,15 +92,15 @@ const check = (label, cond) => {
 };
 
 console.log('\n断言：');
-check('三个变量名互不相同', new Set(names).size === 3);
+check('四个变量名互不相同', new Set(names).size === CASES.length);
 check('变量名都合法（[a-z][a-z0-9_]*）', names.every((n) => /^[a-z][a-z0-9_]*$/.test(n)));
 check('每个 scope 只注册 1 个变量', scopes.every((s) => s.vars.size === 1));
 
 // 写入工具：也是每 scope 一个，名字互不相同，且认自己的文件
 const toolNames = scopes.map((s) => [...s.tools.keys()][0]);
 console.log('写入工具 =', toolNames.join(' | '));
-check('三个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
-check('三个写入工具名互不相同', new Set(toolNames).size === 3);
+check('四个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
+check('四个写入工具名互不相同', new Set(toolNames).size === CASES.length);
 check(
   '工具名 = <变量名>_add 且一一对应',
   toolNames.every((n, i) => n === `${names[i]}_add`),
@@ -139,22 +145,26 @@ for (const [i, c] of CASES.entries()) {
   const after = CASES.map((_, j) => render(j));
   check(`改 ${c.file} 后自己更新`, after[i].includes(marker));
   check(
-    `改 ${c.file} 后另外两个完全不变`,
+    `改 ${c.file} 后另外几个完全不变`,
     CASES.every((_, j) => j === i || after[j] === before[j]),
   );
 }
 
-// 只删一个文件，另外两个照常
+// 只删一个文件，其余几个照常
 rmSync(join(home, CASES[2].file));
 const gone = scopes[2].vars.get(CASES[2].variableName)();
 check(`删掉 ${CASES[2].file} 后仍指向自己的路径`, gone.includes(CASES[2].file));
-check(`删掉 ${CASES[2].file} 后不泄漏别人的内容`, !gone.includes(CASES[0].tag) && !gone.includes(CASES[1].tag));
 check(
-  '删掉一个文件后另外两个仍正常',
-  scopes[0].vars.get(CASES[0].variableName)().includes(CASES[0].tag) &&
-    scopes[1].vars.get(CASES[1].variableName)().includes(CASES[1].tag),
+  `删掉 ${CASES[2].file} 后不泄漏别人的内容`,
+  CASES.every((o, j) => j === 2 || !gone.includes(o.tag)),
+);
+check(
+  '删掉一个文件后其余几个仍正常',
+  CASES.every(
+    (o, j) => j === 2 || scopes[j].vars.get(CASES[j].variableName)().includes(o.tag),
+  ),
 );
 
 rmSync(home, { recursive: true, force: true });
-console.log('\nRESULT:', ok ? 'PASS —— 三个记忆完全隔离（变量通道）' : 'FAIL');
+console.log('\nRESULT:', ok ? 'PASS —— 四个记忆完全隔离（变量通道）' : 'FAIL');
 process.exit(ok ? 0 : 1);

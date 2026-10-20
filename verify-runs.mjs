@@ -18,7 +18,7 @@ const win = await import('./src/history-window.js');
 check('index.js 默认导出有 name/apply', typeof idx.default?.name === 'string' && typeof idx.default?.apply === 'function');
 check('history-window 默认导出有 name/apply', typeof win.default?.name === 'string' && typeof win.default?.apply === 'function');
 check('history-window 必须 inject compaction（否则读服务非法）', JSON.stringify(win.default?.inject) === '["compaction"]');
-check('PRESETS = 3', idx.PRESETS.length === 3);
+check('PRESETS = 4', idx.PRESETS.length === 4);
 
 console.log('\n=== 2. patch 里每个插件行都能被解析到真实模块 ===');
 // 提取所有 name: '...' 并区分内置包与本地包
@@ -59,9 +59,8 @@ function interpolate(text, vars) {
 }
 
 for (const p of idx.PRESETS) {
-  const text = p.personaFile === './persona.md' ? idx.personaText
-    : p.personaFile === './persona-v2-live.md' ? idx.personaTextV2 : idx.personaTextV3;
-  const varName = { 'whale-loli.md': 'whale_memory', 'whale-loli-v2-live.md': 'whale_memory_v2', 'whale-loli-v3-naughty.md': 'whale_memory_v3' }[p.memoryFile];
+  const text = idx.personaTextOf(p.id);
+  const varName = p.memoryVariable;
   const rendered = interpolate(text, { [varName]: '__INJECTED_MEMORY__' });
   check(`${p.id} 变量 ${varName} 被替换`, rendered.includes('__INJECTED_MEMORY__'));
   check(`${p.id} 不留裸 {{}}`, !rendered.includes('{{'));
@@ -69,11 +68,12 @@ for (const p of idx.PRESETS) {
 
 console.log('\n=== 4. 每个插值变量都有对应的 variableName 配置 ===');
 for (const p of idx.PRESETS) {
-  const text = p.personaFile === './persona.md' ? idx.personaText
-    : p.personaFile === './persona-v2-live.md' ? idx.personaTextV2 : idx.personaTextV3;
+  const text = idx.personaTextOf(p.id);
   const used = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]))];
   const declared = [...patch.matchAll(/variableName: (\S+)/g)].map((m) => m[1]);
   check(`${p.id} 引用的变量都已声明`, used.every((u) => declared.includes(u)), `引用=[${used}] 声明=[${declared}]`);
+  // 人设只许引用自己那一个变量，防止复制粘贴时串台
+  check(`${p.id} 只引用自己的变量 ${p.memoryVariable}`, used.length === 1 && used[0] === p.memoryVariable, `引用=[${used}]`);
 }
 
 console.log('\n=== 5. 历史窗口不得挂载（预设作用域取不到 compaction）===');

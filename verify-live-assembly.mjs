@@ -1,55 +1,46 @@
-// 真实装配演练：从 cordis.patch.yml 取出涩涩版预设的 persona 原文，
+// 真实装配演练：从 cordis.patch.yml 取出每个预设的 persona 原文，
 // 用宿主 renderPrompt 的 interpolate 语义 + 真实 composeMemory 输出，
-// 复刻一次最终系统提示，检查记忆是否真的在里面。
+// 逐个复刻最终系统提示，检查记忆是否真的在里面、有没有串到别人身上。
 import { readFileSync } from 'node:fs';
 import { composeMemory } from './src/memory.js';
 
 const patch = readFileSync('cordis.patch.yml', 'utf8');
 
-// --- 1. 找到涩涩版的 persona 文本（用它包含的 {{whale_memory_v3}} 定位） ---
-const marker = '{{whale_memory_v3}}';
-const at = patch.indexOf(marker);
-if (at < 0) { console.error('✗ 找不到 {{whale_memory_v3}}'); process.exit(1); }
+let bad = 0;
+const check = (label, ok) => {
+  console.log((ok ? '  ✓ ' : '  ✗ ') + label);
+  if (!ok) bad++;
+};
 
-// 向前找块标量的起点（persona 用的是 `prefix: |-`，不是 text:），取离 marker 最近的那个
-const head = patch.slice(0, at);
-const anchor = /(?:prefix|text|suffix):[ \t]*[|>][-+]?[ \t]*\r?\n/g;
-let m = null;
-let scan = anchor.exec(head);
-while (scan) { m = scan; scan = anchor.exec(head); }
-if (!m) { console.error('✗ 找不到 persona 块标量起点'); process.exit(1); }
-const lineStart = patch.lastIndexOf('\n', m.index) + 1;
-const indentMatch = /^(\s*)/.exec(patch.slice(lineStart));
-const indent = indentMatch[1];
+/** 从 patch 里取出包含 marker 的那个块标量正文。 */
+function personaBlock(marker) {
+  const at = patch.indexOf(marker);
+  if (at < 0) throw new Error('找不到 ' + marker);
+  // 向前找块标量的起点（persona 用的是 `prefix: |-`，不是 text:），取离 marker 最近的那个
+  const head = patch.slice(0, at);
+  const anchor = /(?:prefix|text|suffix):[ \t]*[|>][-+]?[ \t]*\r?\n/g;
+  let m = null;
+  let scan = anchor.exec(head);
+  while (scan) { m = scan; scan = anchor.exec(head); }
+  if (!m) throw new Error('找不到块标量起点（' + marker + '）');
+  const lineStart = patch.lastIndexOf('\n', m.index) + 1;
+  const indentMatch = /^(\s*)/.exec(patch.slice(lineStart));
+  const indent = indentMatch[1];
 
-// 块体从该行的下一行开始，直到出现缩进 <= indent 且非空的行
-const lines = patch.slice(lineStart).split('\n');
-const body = [];
-let i = 1;
-for (; i < lines.length; i++) {
-  const ln = lines[i];
-  if (ln.trim() === '') { body.push(''); continue; }
-  const ind = /^(\s*)/.exec(ln)[1].length;
-  if (ind <= indent.length) break;
-  body.push(ln);
+  const lines = patch.slice(lineStart).split('\n');
+  const body = [];
+  for (let i = 1; i < lines.length; i++) {
+    const ln = lines[i];
+    if (ln.trim() === '') { body.push(''); continue; }
+    const ind = /^(\s*)/.exec(ln)[1].length;
+    if (ind <= indent.length) break;
+    body.push(ln);
+  }
+  const bodyIndent = Math.min(...body.filter((l) => l.trim()).map((l) => /^(\s*)/.exec(l)[1].length));
+  return body.map((l) => l.slice(bodyIndent)).join('\n');
 }
-// 去掉 YAML 块统一的缩进
-const bodyIndent = Math.min(...body.filter((l) => l.trim()).map((l) => /^(\s*)/.exec(l)[1].length));
-const personaText = body.map((l) => l.slice(bodyIndent)).join('\n');
 
-console.log('=== 1. 取到 persona ===');
-console.log('  长度:', personaText.length, '字符');
-console.log('  含 {{whale_memory_v3}}:', personaText.includes(marker));
-console.log('  首行:', personaText.split('\n')[0]);
-
-// --- 2. 真实 composeMemory ---
-const mem = composeMemory('whale-loli-v3-naughty.md', { maxChars: 16000, turnLimit: 80, detailLimit: 5 });
-if (!mem) { console.error('✗ composeMemory 返回 null'); process.exit(1); }
-const variableValue = `【鲸鱼记忆 · whale-loli-v3-naughty.md】\n文件：C:\\Users\\35453\\.dsh\\whale-loli-v3-naughty.md\n\n${mem.text}`;
-console.log('\n=== 2. composeMemory ===');
-console.log('  记忆正文:', mem.text.length, '字符 | 滚动摘要', mem.keptRoll, '/', mem.totalRoll);
-
-// --- 3. 复刻宿主 interpolate（@deepseek-ai/dsh-system-prompt） ---
+/** 复刻宿主 interpolate（@deepseek-ai/dsh-system-prompt）。 */
 const VARIABLE_NAME = /^[a-z][a-z0-9_]*$/;
 function interpolate(text, variables) {
   let result = '';
@@ -68,43 +59,77 @@ function interpolate(text, variables) {
   return result + text.slice(last);
 }
 
-const variables = {
-  whale_memory: '（v1 不该被用到）',
-  whale_memory_v2: '（v2 不该被用到）',
-  whale_memory_v3: variableValue,
-};
-
-let final;
-try {
-  final = interpolate(personaText, variables);
-} catch (e) {
-  console.error('\n✗ 插值失败:', e.message);
-  process.exit(1);
-}
-
-console.log('\n=== 3. 最终系统提示 ===');
-console.log('  长度:', final.length, '字符');
-const checks = [
-  ['小鱼人设本体', final.includes('小鱼')],
-  ['记忆标题', final.includes('【鲸鱼记忆 · whale-loli-v3-naughty.md】')],
-  ['固定记忆区', final.includes('# 固定记忆')],
-  ['滚动摘要区', final.includes('# 滚动摘要')],
-  ['R0001', final.includes('R0001')],
-  ['最近详细区', final.includes('# 最近详细区')],
-  ['归档索引', final.includes('# 归档索引')],
-  ['本预设记忆文件路径', final.includes('whale-loli-v3-naughty.md')],
-  ['没串到 v1', !final.includes('（v1 不该被用到）')],
-  ['没串到 v2', !final.includes('（v2 不该被用到）')],
-  ['没有残留 {{',  !final.includes('{{')],
+const PRESETS = [
+  {
+    tag: '普通版',
+    file: 'whale-loli.md',
+    variable: 'whale_memory',
+    marker: '{{whale_memory}}',
+    home: 'C:\\Users\\35453\\.dsh\\whale-loli.md',
+  },
+  {
+    tag: '活人版',
+    file: 'whale-loli-v2-live.md',
+    variable: 'whale_memory_v2',
+    marker: '{{whale_memory_v2}}',
+    home: 'C:\\Users\\35453\\.dsh\\whale-loli-v2-live.md',
+  },
+  {
+    tag: '涩涩版',
+    file: 'whale-loli-v3-naughty.md',
+    variable: 'whale_memory_v3',
+    marker: '{{whale_memory_v3}}',
+    home: 'C:\\Users\\35453\\.dsh\\whale-loli-v3-naughty.md',
+  },
+  {
+    tag: '女儿版',
+    file: 'dsh-whale-daughter.md',
+    variable: 'whale_memory_v4',
+    marker: '{{whale_memory_v4}}',
+    home: 'C:\\Users\\35453\\.dsh\\dsh-whale-daughter.md',
+  },
 ];
-let bad = 0;
-for (const [label, ok] of checks) {
-  console.log((ok ? '  ✓ ' : '  ✗ ') + label);
-  if (!ok) bad++;
+
+// 所有变量名：用来给「别人不该被用到」做哨兵
+const SENTINELS = new Map(PRESETS.map((p) => [p.variable, `（${p.variable} 不该被用到）`]));
+
+for (const p of PRESETS) {
+  console.log(`\n===== ${p.tag}（${p.file}）=====`);
+
+  const personaText = personaBlock(p.marker);
+  console.log('  persona 长度:', personaText.length, '字符');
+  check('persona 含自己的变量', personaText.includes(p.marker));
+
+  // 真实 composeMemory
+  const mem = composeMemory(p.file, { maxChars: 16000, turnLimit: 80, detailLimit: 5 });
+  check(`composeMemory('${p.file}') 有返回`, mem !== null && mem !== undefined);
+  const body = mem ? mem.text : '';
+  const variableValue = `【鲸鱼记忆 · ${p.file}】\n文件：${p.home}\n\n${body}`;
+  console.log('  记忆正文:', body.length, '字符 | 滚动', mem?.keptRoll, '/', mem?.totalRoll);
+
+  // 只注册自己的变量 —— 别的变量缺失会抛，正好证明人设没乱引用
+  let final;
+  try {
+    final = interpolate(personaText, { [p.variable]: variableValue });
+  } catch (e) {
+    check('插值只用到自己的变量（' + e.message + '）', false);
+    continue;
+  }
+  check('插值只用到自己的变量', true);
+  console.log('  最终系统提示:', final.length, '字符');
+
+  check('人设本体还在', final.includes('小鱼'));
+  check('记忆横幅指向自己的文件', final.includes(`【鲸鱼记忆 · ${p.file}】`));
+  check('记忆文件路径正确', final.includes(p.home));
+  check('有内容时四区齐', body === '' || ['# 固定记忆', '# 滚动摘要', '# 最近详细区', '# 归档索引'].every((z) => final.includes(z)));
+  check('没有残留 {{', !final.includes('{{'));
+  for (const [v, sentinel] of SENTINELS) {
+    if (v === p.variable) continue;
+    check(`没串到 ${v}`, !final.includes(sentinel));
+  }
+
+  console.log(`  开头 300 字：\n${final.slice(0, 300).split('\n').map((l) => '    ' + l).join('\n')}`);
 }
 
-console.log('\n=== 4. 最终提示开头 600 字 ===');
-console.log(final.slice(0, 600));
-
-console.log('\nRESULT:', bad ? `FAIL (${bad} 项)` : 'PASS —— 涩涩版记忆确实进入最终系统提示');
+console.log('\nRESULT:', bad ? `FAIL (${bad} 项)` : 'PASS —— 四个预设的记忆都各自进入最终系统提示，互不串台');
 process.exitCode = bad ? 1 : 0;

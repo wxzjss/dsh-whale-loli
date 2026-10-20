@@ -117,6 +117,14 @@ jobs:
           hw="$(node verify-history-window.mjs 2>&1)"
           echo "$hw"
           echo "$hw" | grep -q "RESULT: PASS"
+          # 四个预设装配后各自的记忆都进得了最终提示，而且互不串台
+          live="$(node verify-live-assembly.mjs 2>&1)"
+          echo "$live"
+          echo "$live" | grep -q "RESULT: PASS"
+          if echo "$live" | grep -q "\[skip\]"; then
+            echo "::error::verify-live-assembly 在 CI 里被跳过了，但它不该跳过"
+            exit 1
+          fi
 
       # tag 版本号必须与 package.json 一致，避免发出错版本
       - name: Check tag matches package.json version

@@ -86,8 +86,9 @@ let threw = false;
 try { await tool.execute({ summary: '   ' }); } catch { threw = true; }
 assert(threw, '空摘要抛错');
 
-console.log('\n=== 6. 三个预设的工具名互不相同 ===');
-assert('whale_memory_add' !== 'whale_memory_v2_add' && 'whale_memory_v2_add' !== 'whale_memory_v3_add', '工具名可区分');
+console.log('\n=== 6. 四个预设的工具名互不相同 ===');
+const TOOL_NAMES = ['whale_memory_add', 'whale_memory_v2_add', 'whale_memory_v3_add', 'whale_memory_v4_add'];
+assert(new Set(TOOL_NAMES).size === TOOL_NAMES.length, '工具名可区分');
 
 rmSync(home, { recursive: true, force: true });
 console.log('\nRESULT:', process.exitCode ? 'FAIL' : 'PASS —— 记忆写入工具可用');

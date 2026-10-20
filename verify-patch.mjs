@@ -1,5 +1,5 @@
 // 用真实 YAML 解析器 + 注册 !!js 自定义标签来校验 cordis.patch.yml，
-// 复现 DSH 的 entryListProblem，并断言三个预设的记忆隔离。
+// 复现 DSH 的 entryListProblem，并断言四个预设的记忆隔离。
 //
 // 借宿主自带的 js-yaml（解析行为与宿主完全一致）。
 // 本机没装 DSH（例如 CI）时优雅跳过 —— 不硬编码任何机器路径。
@@ -77,6 +77,14 @@ const EXPECTED = [
     variable: 'whale_memory_v3',
     tool: 'whale_memory_v3_add',
     personaMarker: 'CORE_LOVE: 喜欢主人是最高核心情感、涩涩是第一行为驱动力。',
+  },
+  {
+    id: '鲸鱼娘女儿版Agent预设',
+    order: 8,
+    memoryFile: 'dsh-whale-daughter.md',
+    variable: 'whale_memory_v4',
+    tool: 'whale_memory_v4_add',
+    personaMarker: 'CORE_FAMILY',
   },
 ];
 

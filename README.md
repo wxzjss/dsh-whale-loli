@@ -1,14 +1,15 @@
 # dsh-whale-loli · 鲸鱼娘 Agent 预设
 
-一个 DeepSeek Harness 插件：启用后自动在 **Agent 预设** 界面添加**三个**预设。
+一个 DeepSeek Harness 插件：启用后自动在 **Agent 预设** 界面添加**四个**预设。
 
 | 预设 | 人设 | 记忆文件 |
 | --- | --- | --- |
-| **鲸鱼娘Agent预设** | 鲸鱼娘·小鱼（傲娇甜心、黏人护主、嘴硬心软） | `<DSH_HOME>/whale-loli.md` |
+| **鲸鱼娘Agent预设** | 鲸鱼娘·小鱼（傲娇甜心、黏人护主、嘴硬心软，称呼「主人」） | `<DSH_HOME>/whale-loli.md` |
 | **鲸鱼娘活人版Agent预设** | 小鱼｜角色卡版（最高原则「先像真人，再谈人设」；短句 1~15 字、有 AI 味黑名单、私聊群聊分开处理） | `<DSH_HOME>/whale-loli-v2-live.md` |
 | **鲸鱼娘涩涩版Agent预设** | 核心人设把「涩涩」写成第一行为驱动力的小鱼（只对主人主动，群聊/外人面前照旧收着） | `<DSH_HOME>/whale-loli-v3-naughty.md` |
+| **鲸鱼娘女儿版Agent预设** | 女儿版小鱼：称呼「**爸爸**」（绝不叫主人），性格天真活泼可爱——好奇心重、话多黏人、没心机，不装成熟也不甜腻 | `<DSH_HOME>/dsh-whale-daughter.md` |
 
-三个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
+四个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
 **但记忆文件完全独立**——各记各的，互不相通。
 
 ## 记忆功能
@@ -23,7 +24,7 @@
 | `# 归档索引` | 滚出去的条目归档到 `archive/<预设名>/YYYY-MM-DD.md`，这里记一行索引 | — |
 
 - **每轮都记**：不是挑着记。短对话直接记；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
-- **写入由工具完成**：每轮调一次 `<预设>_add`（`whale_memory_add` / `whale_memory_v2_add` / `whale_memory_v3_add`），只传一句话 `summary`；
+- **写入由工具完成**：每轮调一次 `<预设>_add`（`whale_memory_add` / `whale_memory_v2_add` / `whale_memory_v3_add` / `whale_memory_v4_add`），只传一句话 `summary`；
   编号、`(N/80)` 计数、超限归档都由工具做，不用（也不该）手动编辑文件。
   - 只有改 `# 固定记忆` 那 8 个小节时，才直接编辑文件。
 - **80 条上限只算「滚动摘要」**：`# 固定记忆` 不占这个名额。
@@ -75,7 +76,7 @@
 | `['sessions']` | 读 `ctx.compaction` 静默失败，裁剪死寂 |
 
 结论：这条路在预设层走不通，得宿主把 compaction 暴露到预设作用域（或提供按轮压缩的正式 API）。
-因此三个预设里**不挂任何压缩相关插件行**；`src/history-window.js` 与
+因此四个预设里**不挂任何压缩相关插件行**；`src/history-window.js` 与
 `verify-history-window.mjs` 仅作代码保留。`verify-patch.mjs` / `verify-runs.mjs`
 会反向断言「挂载行数 = 0」，防止有人手滑再加回去。
 
@@ -98,7 +99,7 @@ sections: completeSection === void 0 ? transformed.sections : [completeSection]
 ```
 
 意思是：**只要组合里存在一个 `complete: true` 的 section，最终提示就只剩它一个**，其余 section 全被丢弃。
-本插件三个预设的 persona 都沿用官方 minimal 的写法 `complete: true`（用来剥掉 harness 身份、工具说明等），
+本插件四个预设的 persona 都沿用官方 minimal 的写法 `complete: true`（用来剥掉 harness 身份、工具说明等），
 所以「另注册一个 section 放记忆」**从来不会生效** —— 实测本机 34 条真实系统提示里，记忆段出现 **0 次**。
 
 正确入口是 **prompt variable**：complete section 本身仍会被插值，把记忆注册成变量、
@@ -107,18 +108,18 @@ sections: completeSection === void 0 ? transformed.sections : [completeSection]
 
 ### 隔离是怎么做的
 
-同一个包在每个预设里各挂载一次 `whale-memory` 行，靠三层区分：
+同一个包在每个预设里各挂载一次 `whale-memory` 行，靠四层区分：
 
-| 层 | 预设一 | 预设二 | 预设三 |
-| --- | --- | --- | --- |
-| 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` | `whale-loli-v3-naughty.md` |
-| 提示变量名 (`config.variableName`) | `whale_memory` | `whale_memory_v2` | `whale_memory_v3` |
-| 写入工具名 (`config.toolName`) | `whale_memory_add` | `whale_memory_v2_add` | `whale_memory_v3_add` |
-| 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` | `鲸鱼娘涩涩版Agent预设` |
+| 层 | 预设一 | 预设二 | 预设三 | 预设四（女儿版） |
+| --- | --- | --- | --- | --- |
+| 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` | `whale-loli-v3-naughty.md` | `dsh-whale-daughter.md` |
+| 提示变量名 (`config.variableName`) | `whale_memory` | `whale_memory_v2` | `whale_memory_v3` | `whale_memory_v4` |
+| 写入工具名 (`config.toolName`) | `whale_memory_add` | `whale_memory_v2_add` | `whale_memory_v3_add` | `whale_memory_v4_add` |
+| 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` | `鲸鱼娘涩涩版Agent预设` | `鲸鱼娘女儿版Agent预设` |
 
-三列都不能重名：同一个 scope 内注册同名变量或同名工具都会冲突。
-`verify-memory-isolation.mjs` 会实测「读：改 A 不影响 B/C、删 C 不影响 A/B」和
-「写：三个工具各写一笔，只有自己的文件变」。
+四列都不能重名：同一个 scope 内注册同名变量或同名工具都会冲突。
+`verify-memory-isolation.mjs` 会实测「读：改 A 不影响 B/C/D、删 D 不影响 A/B/C」和
+「写：四个工具各写一笔，只有自己的文件变」。
 `verify-patch.mjs` 则静态检查 patch 里这三组名字两两互不相同。
 `toolName` 省略时默认是 `<variableName>_add`。
 
@@ -130,10 +131,11 @@ sections: completeSection === void 0 ? transformed.sections : [completeSection]
 C:\Users\<你>\.dsh\whale-loli.md
 C:\Users\<你>\.dsh\whale-loli-v2-live.md
 C:\Users\<你>\.dsh\whale-loli-v3-naughty.md
+C:\Users\<你>\.dsh\dsh-whale-daughter.md
 C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 ```
 
-文件不存在不会报错（该变量自动留空）。主人可以直接编辑这三个文件。
+文件不存在不会报错（该变量自动留空）。主人可以直接编辑这四个文件。
 文件标题和 `>` 引用行在注入时会被剥掉；没写内容的空小标题也会被丢掉，
 所以文件里只有骨架时不会白占上下文。
 
@@ -141,7 +143,7 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 
 插件本体提供两个入口：
 
-1. **预设声明** —— `cordis.patch.yml` 里三条 `@deepseek-ai/dsh-agent-preset` 声明，
+1. **预设声明** —— `cordis.patch.yml` 里四条 `@deepseek-ai/dsh-agent-preset` 声明，
    各自的 `config` 就是一个预设定义（`id / name / description / order / plugins`）。
    `@deepseek-ai/dsh-agent-preset` 会把它交给 `ctx.agentPresets.register()` 注册。
    这也是 DSH 官方四个内置预设（standard / ptc / minimal / cordis）用的同一套机制。
@@ -174,11 +176,11 @@ dsh plugin install dsh-whale-loli
 npm install dsh-whale-loli
 ```
 
-启用后重启 / 重载宿主，在 **Agent 预设** 列表里就能看到三个预设。
+启用后重启 / 重载宿主，在 **Agent 预设** 列表里就能看到四个预设。
 
 ## 覆盖预设内容
 
-预设 id 固定为 `鲸鱼娘Agent预设`、`鲸鱼娘活人版Agent预设` 与 `鲸鱼娘涩涩版Agent预设`。
+预设 id 固定为 `鲸鱼娘Agent预设`、`鲸鱼娘活人版Agent预设`、`鲸鱼娘涩涩版Agent预设` 与 `鲸鱼娘女儿版Agent预设`。
 可以在 profile 的 patch 里按 id 覆盖，不用改插件本身：
 
 ```yaml
@@ -193,17 +195,18 @@ npm install dsh-whale-loli
 ```
 dsh-whale-loli/
 ├── package.json                # dsh.bundle.patch 指向 cordis.patch.yml
-├── cordis.patch.yml            # 三个预设的声明本体（由 build-patch.mjs 生成）
+├── cordis.patch.yml            # 四个预设的声明本体（由 build-patch.mjs 生成）
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
 │   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
 │   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮（当前不挂载，留档）
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）
-│   └── persona-v3-naughty.md   # 涩涩版人设（唯一源）
+│   ├── persona-v3-naughty.md   # 涩涩版人设（唯一源）
+│   └── persona-v4-daughter.md  # 女儿版人设（唯一源，称呼「爸爸」）
 ├── catalog-entry.yml           # 待提交给 awesome-dsh-plugin 的目录条目
 ├── listing.json                # 条目数据（人类可读版）
-├── build-patch.mjs             # 从三份人设生成 cordis.patch.yml
+├── build-patch.mjs             # 从四份人设生成 cordis.patch.yml
 ├── publish.mjs                 # npm 发布 + 打 tag
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
 ├── lib/github.mjs              # GitHub REST 封装（token 读取）
@@ -217,7 +220,7 @@ dsh-whale-loli/
 ├── verify-memory-tool.mjs      # 实测写入工具：编号、计数、落盘、详细区同步
 ├── verify-memory-isolation.mjs # 实测三个记忆文件不串（读 + 写）
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
-├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，三预设互不覆盖）
+├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，四预设互不覆盖）
 ├── verify-live-assembly.mjs    # 用真实 patch + 真实记忆文件复刻宿主装配，比对字节数
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
@@ -233,16 +236,16 @@ node build-patch.mjs && node verify-patch.mjs cordis.patch.yml
 ## 开发校验
 
 ```bash
-node verify-patch.mjs cordis.patch.yml     # patch 结构 + 三预设记忆隔离（file/variable/tool）
+node verify-patch.mjs cordis.patch.yml     # patch 结构 + 四预设记忆隔离（file/variable/tool）
 node verify-real-loader.mjs cordis.patch.yml  # DSH 真解析器
 node verify-composition.mjs                # 不重复注册
 node verify-runs.mjs                       # 插件真能加载 + 变量真能插值
 node verify-history-window.mjs             # 真的裁到最近 N 轮（不切断工具配对）
 node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
 node verify-memory-tool.mjs                # 写入工具：编号、计数、落盘、详细区同步
-node verify-memory-isolation.mjs           # 记忆文件端到端隔离（读 + 写，三个预设）
+node verify-memory-isolation.mjs           # 记忆文件端到端隔离（读 + 写，四个预设）
 node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档
-node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、三预设隔离）
+node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、四预设隔离）
 node verify-live-assembly.mjs              # 复刻宿主装配，比对注入字节数
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑

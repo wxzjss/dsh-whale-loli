@@ -1,14 +1,16 @@
 // 生成 dsh-whale-loli/cordis.patch.yml。
 //
-// 本 bundle 提供三个互不干扰的 Agent 预设，各自带一份独立记忆文件：
+// 本 bundle 提供四个互不干扰的 Agent 预设，各自带一份独立记忆文件：
 //   · 鲸鱼娘Agent预设        —— persona.md              → whale-loli.md
 //   · 鲸鱼娘活人版Agent预设  —— persona-v2-live.md      → whale-loli-v2-live.md
 //   · 鲸鱼娘涩涩版Agent预设  —— persona-v3-naughty.md   → whale-loli-v3-naughty.md
+//   · 鲸鱼娘女儿版Agent预设  —— persona-v4-daughter.md  → dsh-whale-daughter.md
 //
-// 「不串」靠三层隔离：
+// 「不串」靠三层隔离（缺一即串）：
 //   1) 记忆文件名不同（whale-memory 的 config.file）
-//   2) prompt section 名不同（config.sectionName，否则同 scope 注册冲突）
-//   3) 预设 id 不同 → registry 各自挂载、各自 scope
+//   2) 提示变量名不同（config.variableName，否则同 scope 注册冲突）
+//   3) 写入工具名不同（config.toolName，同上）
+//   4) 预设 id 不同 → registry 各自挂载、各自 scope
 // 只为构建方便，不随包发布。
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,8 +31,9 @@ function block(text, spaces = 16) {
 const persona = readFileSync(root + 'src/persona.md', 'utf8');
 const personaV2 = readFileSync(root + 'src/persona-v2-live.md', 'utf8');
 const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
+const personaV4 = readFileSync(root + 'src/persona-v4-daughter.md', 'utf8');
 
-/** 三个预设共用的工具面行（含参数化记忆行）。 */
+/** 每个预设共用的工具面行（含参数化记忆行）。 */
 function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail }) {
   return `          # 长期记忆：注册成提示变量，由人设开头的 {{${memoryVariable}}} 引用。
           # persona 是 complete:true，宿主会把独立 section 丢掉（见 src/memory.js 顶部注释），
@@ -107,19 +110,19 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
 `;
 }
 
-const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（三个）
+const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个）
 #
-# 本 bundle 往宿主组合里插三条东西：
+# 本 bundle 往宿主组合里插两样东西：
 #
-#   1) 三条 \`@deepseek-ai/dsh-agent-preset\` 声明 —— 每条的 config 就是一个预设本体
+#   1) 四条 \`@deepseek-ai/dsh-agent-preset\` 声明 —— 每条的 config 就是一个预设本体
 #      （id / name / description / order / plugins），被 \`agentPresets.register()\`
 #      注册后即出现在 Agent 预设界面。
-#   2) 三条 \`dsh-whale-loli\` 行 —— 各挂载本包 src/memory.js 里的 whale-memory，
-#      分别把 <DSH_HOME>/whale-loli.md、whale-loli-v2-live.md、whale-loli-v3-naughty.md
-#      作为 prompt section 注入，实现三套互不相通的跨会话记忆。
+#   2) 四条 \`dsh-whale-loli\` 行 —— 各挂载本包 src/memory.js 里的 whale-memory，
+#      把该预设自己的记忆文件注册成提示变量、并注册对应的写入工具，
+#      实现四套互不相通的跨会话记忆。
 #
-# 记忆隔离要点：三条记忆行的 config.file / config.sectionName 都不一样，
-# 且分属不同预设 scope，所以三个记忆文件不会被读串或写串。
+# 记忆隔离要点：四条记忆行的 config.file / config.variableName / config.toolName
+# 都不一样，且分属不同预设 scope，所以四个记忆文件不会被读串或写串。
 - insert:
     # ── 预设一：鲸鱼娘Agent预设（原版）────────────────────────────────────
     - id: preset-鲸鱼娘Agent预设
@@ -175,13 +178,32 @@ ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
 ${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
+    # ── 预设四：鲸鱼娘女儿版Agent预设 ────────────────────────────────────
+    - id: preset-鲸鱼娘女儿版Agent预设
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: 鲸鱼娘女儿版Agent预设
+        name: 鲸鱼娘女儿版Agent预设
+        description: 女儿版小鱼：称呼「爸爸」，性格天真活泼可爱（好奇心重、黏人、没心机），并改用独立记忆文件 dsh-whale-daughter.md，与原版、活人版、涩涩版记忆互不相通。
+        order: 8
+        plugins:
+          # 人设：女儿版
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+${block(personaV4)}
+              complete: true
+              includeRuntimeContext: false
+${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');
 console.log(
-  'wrote cordis.patch.yml, chars=%d, personaA lines=%d, personaB lines=%d, personaC lines=%d',
+  'wrote cordis.patch.yml, chars=%d, personaA lines=%d, personaB lines=%d, personaC lines=%d, personaD lines=%d',
   yml.length,
   persona.split('\n').length,
   personaV2.split('\n').length,
   personaV3.split('\n').length,
+  personaV4.split('\n').length,
 );

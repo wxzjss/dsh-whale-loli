@@ -150,6 +150,23 @@ console.log('\n=== 3. 三个预设的归档互不覆盖 ===');
   check('v1 归档没有被 v3 污染', !readFileSync(join(home, 'archive', 'whale-loli', readdirSync(join(home, 'archive', 'whale-loli'))[0]), 'utf8').includes('R0082'));
 }
 
+console.log('\n=== 3b. 女儿版归档目录独立，且不碰前三份 ===');
+{
+  const beforeDirs = readdirSync(join(home, 'archive')).sort();
+  seed('dsh-whale-daughter.md', 82);
+  const { listeners } = mount('dsh-whale-daughter.md', 'whale_memory_v4');
+  listeners.get('agent/status')({ status: 'idle' });
+  const dirs = readdirSync(join(home, 'archive')).sort();
+  check('新增 dsh-whale-daughter 目录', dirs.includes('dsh-whale-daughter') && dirs.length === beforeDirs.length + 1, `实际 [${dirs.join(',')}]`);
+  const files = readdirSync(join(home, 'archive', 'dsh-whale-daughter'));
+  const body = readFileSync(join(home, 'archive', 'dsh-whale-daughter', files[0]), 'utf8');
+  check('女儿版归档只含自己的条目', body.includes('R0001') && !body.includes('R0085'));
+  check(
+    '前三份归档目录一个没多',
+    ['whale-loli', 'whale-loli-v3-naughty'].every((d) => beforeDirs.includes(d) === dirs.includes(d)),
+  );
+}
+
 console.log('\n=== 4. 文件缺失时 idle 不炸 ===');
 {
   const { listeners } = mount('never-existed.md', 'whale_memory_x');
