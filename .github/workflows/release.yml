@@ -78,6 +78,7 @@ jobs:
           node verify-host-ledger.mjs
           node verify-row-dispatch.mjs cordis.patch.yml
           node verify-thinking-language.mjs cordis.patch.yml
+          node verify-affinity-precedence.mjs cordis.patch.yml
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -215,6 +216,10 @@ jobs:
           think="$(node verify-thinking-language.mjs cordis.patch.yml 2>&1)"
           echo "$think"
           echo "$think" | grep -q "RESULT: PASS"
+          # 好感度压过人设：纯文本断言，CI 必须真跑。
+          prec="$(node verify-affinity-precedence.mjs cordis.patch.yml 2>&1)"
+          echo "$prec"
+          echo "$prec" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 
