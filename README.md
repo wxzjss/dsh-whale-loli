@@ -122,6 +122,31 @@ ctx.inject(['remote.whale-affinity'], (child) => {
 断言记忆行只注册 `whale_memory*`、好感度行只注册 `affinity_vN`，而且好感度变量的
 正文里不许出现记忆标记（并故意跑一遍错误分派，证明这个测试真能抓到问题）。
 
+## 线上取证：好感度到底进没进提示
+
+好感度出过一次「看起来配好了、其实一点没生效」的事故：四条挂载行被分派进了记忆模块，
+`【好感度】` 标题后面紧跟的是**记忆文件的正文**，-100 这种极端值模型压根没看见，
+表现就是「像摆设」。这种故障**不报错、不崩**，只能去会话日志里看提示原文。
+
+```
+node check-affinity-live.mjs          # 只看汇总
+node check-affinity-live.mjs --all    # 顺带打印每个异常会话的提示原文
+```
+
+它扫 `<DSH_HOME>/sessions` 下最近的会话日志（zstd 解压），取每个会话**最后一条
+`system/message`**（＝最近一次真正发给模型的系统提示），看 `【好感度】` 后面跟的是什么：
+
+| 判定 | 含义 | 怎么办 |
+| --- | --- | --- |
+| `OK` | 紧跟 `当前好感度：<数字>`，档位也对 | 正常 |
+| `MISWIRED` | 紧跟 `【鲸鱼记忆` —— 位置被记忆正文占了 | 挂载行分派错了，看 `applyEntry`，再重启 DSH |
+| `NOSEC` | 有人设但整个没有 `【好感度】` 标题 | affinity 行没挂上 |
+
+只读脚本，不写任何文件；非鲸鱼娘预设的会话会被自动跳过。
+
+**为什么必须重启才看得到修复。** 宿主在启动时把 bundle patch 读进内存，之后改
+`cordis.patch.yml` 或 `src/index.js` 都不会热加载。判断依据很简单：比对 DSH 进程启动时间
+与这些文件的修改时间 —— 文件比进程新，说明跑的还是旧的。
 ## 内部思考一律简体中文（思维链）
 
 四个预设的人设里都钉了一条硬规则，位置在前 40 行内（每份人设各 1 处）：
@@ -401,6 +426,7 @@ node verify-client.mjs                     # 设置页半边：section 注册 + 
 node verify-daemon-status.mjs              # 设置页数据：四预设列全、wired 非空、读写同一份
 node verify-row-dispatch.mjs cordis.patch.yml  # 每条挂载行分派到自己那个模块（记忆≠好感度）
 node verify-thinking-language.mjs cordis.patch.yml  # 内部思考一律简体中文（四份人设各一处、措辞一致）
+node check-affinity-live.mjs         # 线上取证：最近一次提示里好感度段是否注入正确（需真实会话日志）
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
