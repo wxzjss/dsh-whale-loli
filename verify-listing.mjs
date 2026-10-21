@@ -43,14 +43,24 @@ try {
   const out = execFileSync('gh', ['api', `repos/${REPO}`, '--jq', '.created_at'], { encoding: 'utf8', shell: true }).trim();
   created = new Date(out);
 } catch {
-  // 没有 gh CLI 就退回 token + fetch（token 走 lib/github 的统一来源，不硬编码路径）
+  // 没有 gh CLI 就退回 token + fetch（token 走 lib/github 的统一来源，不硬编码路径）。
+  // 本机到 api.github.com 是**间歇性**不可达（同一分钟内一次 `fetch failed`、下一次 200），
+  // 所以这里重试几轮：一次网络抖动不该把发布卡死。
   try {
     const { readToken } = await import('./lib/github.mjs');
     const token = readToken();
-    const res = await fetch(`https://api.github.com/repos/${REPO}`, {
-      headers: token ? { authorization: `token ${token}`, 'user-agent': 'dsh' } : { 'user-agent': 'dsh' },
-    });
-    if (res.ok) created = new Date((await res.json()).created_at);
+    for (let attempt = 1; attempt <= 4 && created === null; attempt += 1) {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${REPO}`, {
+          headers: token ? { authorization: `token ${token}`, 'user-agent': 'dsh' } : { 'user-agent': 'dsh' },
+        });
+        if (res.ok) created = new Date((await res.json()).created_at);
+        else if (attempt === 4) console.log(`[net] api.github.com 返回 ${res.status}`);
+      } catch (e) {
+        if (attempt === 4) console.log(`[net] api.github.com 取不到（重试 4 次）：${e.message}`);
+        else await new Promise((r) => setTimeout(r, 700 * attempt));
+      }
+    }
   } catch { /* 交给下面的分支 */ }
 }
 if (created && !Number.isNaN(created.getTime())) {

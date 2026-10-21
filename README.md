@@ -91,6 +91,37 @@ ctx.inject(['remote.whale-affinity'], (child) => {
 校验脚本都要拿宿主源码里真正读的那个名字来断言。
 
 
+### ⚠️ 所有行都用裸包名之后，必须自己按 config 分派
+
+宿主的 client 发现机制只认**裸包名**（`locatePkgJson` 不认 `pkg/subpath`），
+所以本包在 patch 里的 9 条挂载行（1 条宿主级 daemon + 4 条记忆 + 4 条好感度）
+全都写成 `name: 'dsh-whale-loli'`，靠 `config` 决定进哪个模块：
+
+```yaml
+- id: whale-memory            # 记忆行
+  name: 'dsh-whale-loli'
+  config: { row: memory, file: whale-loli.md, variableName: whale_memory, ... }
+- id: whale-affinity          # 好感度行
+  name: 'dsh-whale-loli'
+  config: { row: affinity, scope: 鲸鱼娘Agent预设, variableName: affinity_v1, ... }
+- id: whale-affinity-daemon   # 宿主级
+  name: 'dsh-whale-loli'
+  config: { daemon: true }
+```
+
+`applyEntry()` 里只判断 `config.daemon` 的那一版（0.9.10 及以前）踩了真实事故：
+4 条好感度行全部落进 `applyMemory()`，记忆插件不认识 `scope`、`config.file` 缺失就
+退回默认的 `whale-loli.md`，于是
+
+- `{{affinity_v1}}` 里注入的是**记忆文件正文** —— 人设的「好感度」段变成第二份记忆，
+  设置页滑块怎么拖都不会有任何可见变化；
+- 每个预设多出一个把摘要写进 `whale-loli.md` 的 `affinity_vN_set` 工具（工具串台）。
+
+现在按 `config.row` 显式分派，并保留形状兜底（有 `scope`、没 `file` ⇒ 好感度行）。
+`verify-row-dispatch.mjs` 是这条教训的守门人：它逐行跑**真的** `applyEntry`，
+断言记忆行只注册 `whale_memory*`、好感度行只注册 `affinity_vN`，而且好感度变量的
+正文里不许出现记忆标记（并故意跑一遍错误分派，证明这个测试真能抓到问题）。
+
 ## 记忆功能
 
 小鱼的记忆本分**四个区**，各管各的：
@@ -344,6 +375,7 @@ node verify-tool-schema.mjs                # 宿主自己的校验器验八个�
 node verify-tool-identity.mjs              # 八个工具描述互不串台（共享表语义）
 node verify-client.mjs                     # 设置页半边：section 注册 + 面板渲染
 node verify-daemon-status.mjs              # 设置页数据：四预设列全、wired 非空、读写同一份
+node verify-row-dispatch.mjs cordis.patch.yml  # 每条挂载行分派到自己那个模块（记忆≠好感度）
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查

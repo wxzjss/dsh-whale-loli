@@ -41,6 +41,7 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
+              row: memory
               file: ${memoryFile}
               variableName: ${memoryVariable}
               toolName: ${memoryVariable}_add
@@ -58,6 +59,7 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
+              row: affinity
               scope: ${presetId}
               variableName: ${affinityVariable}
               toolName: ${affinityTool}

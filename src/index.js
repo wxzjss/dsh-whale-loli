@@ -128,6 +128,18 @@ function apply(ctx, config = {}) {
  */
 function applyEntry(ctx, config = {}) {
   if (config?.daemon === true) return applyDaemon(ctx, config);
+  // 好感度行必须自己分派出去。
+  //
+  // 事故（0.9.10 及以前）：所有行都用裸包名 `dsh-whale-loli`（client 发现机制要求，
+  // 见上面那段注释），而这里只判断了 `daemon`，于是 4 条 `whale-affinity` 行全部
+  // 落进 `applyMemory()`。记忆插件不认识 scope，`config.file` 缺失就退回默认的
+  // `whale-loli.md` —— 结果：
+  //   · `{{affinity_v1}}` 里注入的是**记忆文件正文**（人设的好感度段变成第二份记忆）；
+  //   · 每个预设多出一个把摘要写进 whale-loli.md 的 `affinity_vN_set` 工具（工具串台）。
+  // 现在按 `config.row` 显式分派，并保留形状兜底（有 scope、没 file ⇒ 好感度行）。
+  if (config?.row === 'affinity' || (config?.scope !== undefined && config?.file === undefined)) {
+    return applyAffinity(ctx, config);
+  }
   return applyMemory(ctx, config);
 }
 

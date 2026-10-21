@@ -76,6 +76,7 @@ jobs:
           node verify-daemon-service.mjs
           node verify-client-gateway-access.mjs
           node verify-host-ledger.mjs
+          node verify-row-dispatch.mjs cordis.patch.yml
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -204,6 +205,11 @@ jobs:
           # 同样依赖本机安装态（profile + ~/.dsh），裸 runner 上会 [skip]，只打印。
           ledg="$(node verify-host-ledger.mjs 2>&1)"
           echo "$ledg"
+          # 挂载行分派：记忆行只能注册 whale_memory*、好感度行只能注册 affinity_vN。
+          # 0.9.10 及以前 4 条好感度行全落进 applyMemory()，好感度段被塞了记忆正文。
+          # 需要宿主的 js-yaml，裸 runner 上打 [skip]，所以只打印不 grep。
+          disp="$(node verify-row-dispatch.mjs cordis.patch.yml 2>&1)"
+          echo "$disp"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 

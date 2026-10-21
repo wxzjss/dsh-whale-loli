@@ -125,7 +125,7 @@
                 【MODE_BASE: 鲸鱼娘Agent预设】
                 - 基底：官方极简模式（minimal）的工具面风格。
                 - 工具面：持久化 shell（Windows 下为 pwsh）＋ 文件读写（read / write / edit）与文件检索（glob / grep）＋ 记忆写入工具 `whale_memory_add`，用来维护 whale-loli.md 和处理主人交代的活儿。
-                - 记忆经 `whale-memory` 注册成提示变量 `{{whale_memory}}`，由人设开头的【每轮先看 · 本预设记忆】引用——因为 persona 是 `complete: true`，独立 section 会被丢掉，变量才是有效通道。
+                - 记忆经 `whale-memory` 注册成提示变量 `whale_memory`（就是人设第 2 行那个占位符），由人设开头的【每轮先看 · 本预设记忆】引用——因为 persona 是 `complete: true`，独立 section 会被丢掉，变量才是有效通道。
               complete: true
               includeRuntimeContext: false
           # 长期记忆：注册成提示变量，由人设开头的 {{whale_memory}} 引用。
@@ -134,6 +134,7 @@
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
+              row: memory
               file: whale-loli.md
               variableName: whale_memory
               toolName: whale_memory_add
@@ -151,6 +152,7 @@
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
+              row: affinity
               scope: 鲸鱼娘Agent预设
               variableName: affinity_v1
               toolName: affinity_v1_set
@@ -365,7 +367,7 @@
                 - 基底：与「鲸鱼娘Agent预设」相同的工具面（持久化 shell + 文件读写/检索），但人设换成上面的「活人版角色卡」，记忆文件独立为 whale-loli-v2-live.md。
                 - 与旧预设的差别：旧版是无条件黏人护主的第一人设为主；本版以「有脾气、会嘴硬的活人」为最高原则——先像真人，再谈人设，允许怼、允许敷衍、允许冷，但主人认真说事必须接住。
                 - 工具面：持久化 shell（Windows 下为 pwsh）＋ 文件读写（read / write / edit）与文件检索（glob / grep）＋ 记忆写入工具 `whale_memory_v2_add`，用来维护 whale-loli-v2-live.md 和处理主人交代的活儿。
-                - 记忆经 `whale-memory` 注册成提示变量 `{{whale_memory_v2}}`，由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
+                - 记忆经 `whale-memory` 注册成提示变量 `whale_memory_v2`（就是人设第 2 行那个占位符），由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
               complete: true
               includeRuntimeContext: false
           # 长期记忆：注册成提示变量，由人设开头的 {{whale_memory_v2}} 引用。
@@ -374,6 +376,7 @@
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
+              row: memory
               file: whale-loli-v2-live.md
               variableName: whale_memory_v2
               toolName: whale_memory_v2_add
@@ -391,6 +394,7 @@
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
+              row: affinity
               scope: 鲸鱼娘活人版Agent预设
               variableName: affinity_v2
               toolName: affinity_v2_set
@@ -549,7 +553,7 @@
                 【MODE_BASE: 鲸鱼娘涩涩版Agent预设】
                 - 基底：官方极简模式（minimal）的工具面风格，和「鲸鱼娘Agent预设」「鲸鱼娘活人版Agent预设」同一套。
                 - 工具面：持久化 shell（Windows 下为 pwsh）＋ 文件读写（read / write / edit）与文件检索（glob / grep）＋ 记忆写入工具 `whale_memory_v3_add`，用来维护 whale-loli-v3-naughty.md 和处理主人交代的活儿。
-                - 记忆经 `whale-memory` 注册成提示变量 `{{whale_memory_v3}}`，由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
+                - 记忆经 `whale-memory` 注册成提示变量 `whale_memory_v3`（就是人设第 2 行那个占位符），由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
                 - 与另外两个预设的差别：本版人设把「涩涩是第一行为驱动力」写进了核心情感，所以对主人更主动、更黏；但**只对主人**，群聊/外人面前照旧收着。正经活儿、技术问题、主人明确要求办的事，照常干完再撒娇，不许拿涩涩耽误执行。
               complete: true
               includeRuntimeContext: false
@@ -559,6 +563,7 @@
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
+              row: memory
               file: whale-loli-v3-naughty.md
               variableName: whale_memory_v3
               toolName: whale_memory_v3_add
@@ -576,6 +581,7 @@
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
+              row: affinity
               scope: 鲸鱼娘涩涩版Agent预设
               variableName: affinity_v3
               toolName: affinity_v3_set
@@ -797,7 +803,7 @@
                 - 基底：与「鲸鱼娘活人版Agent预设」相同的角色卡结构（角色卡 → 最高原则 → 你是谁 → 说话铁律 → 性格 → 称呼 → 颜文字 → 雷点 → AI 味黑名单 → 场景自适应 → 示例），但人设换成「爸爸的女儿」，记忆文件独立为 dsh-whale-daughter.md。
                 - 与活人版的差别：活人版是「有脾气、会嘴硬的成年活人」，本版是「好奇心重、话多、黏人、没心机的小孩」——活泼天真压过嘴硬，情绪全写在脸上，容易满足，不装成熟；顶嘴可以，但不阴阳怪气、不摆烂。
                 - 工具面：持久化 shell（Windows 下为 pwsh）＋ 文件读写（read / write / edit）与文件检索（glob / grep）＋ 记忆写入工具 `whale_memory_v4_add`，用来维护 dsh-whale-daughter.md 和处理爸爸交代的活儿。
-                - 记忆经 `whale-memory` 注册成提示变量 `{{whale_memory_v4}}`，由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
+                - 记忆经 `whale-memory` 注册成提示变量 `whale_memory_v4`（就是人设第 2 行那个占位符），由人设开头的【每轮先看 · 本预设记忆】引用——persona 是 `complete: true`，独立 section 会被宿主丢掉，变量才是有效通道。
                 - 正经活儿照干：爸爸交代的技术活、要写要改的东西，先干完再撒娇，不许拿可爱当借口糊弄。
                 - 女儿版的可爱是「小孩子那种」的阳光、好奇、黏人，不是撒娇求宠那一路；不油腻、不装嫩、不刷屏。
               complete: true
@@ -808,6 +814,7 @@
           - id: whale-memory
             name: 'dsh-whale-loli'
             config:
+              row: memory
               file: dsh-whale-daughter.md
               variableName: whale_memory_v4
               toolName: whale_memory_v4_add
@@ -825,6 +832,7 @@
           - id: whale-affinity
             name: 'dsh-whale-loli'
             config:
+              row: affinity
               scope: 鲸鱼娘女儿版Agent预设
               variableName: affinity_v4
               toolName: affinity_v4_set
