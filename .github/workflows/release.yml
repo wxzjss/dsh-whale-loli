@@ -77,6 +77,7 @@ jobs:
           node verify-client-gateway-access.mjs
           node verify-host-ledger.mjs
           node verify-row-dispatch.mjs cordis.patch.yml
+          node verify-thinking-language.mjs cordis.patch.yml
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -210,6 +211,10 @@ jobs:
           # 需要宿主的 js-yaml，裸 runner 上打 [skip]，所以只打印不 grep。
           disp="$(node verify-row-dispatch.mjs cordis.patch.yml 2>&1)"
           echo "$disp"
+          # 内部思考一律简体中文：纯文本断言，CI 里必须真跑（不依赖 DSH）。
+          think="$(node verify-thinking-language.mjs cordis.patch.yml 2>&1)"
+          echo "$think"
+          echo "$think" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 

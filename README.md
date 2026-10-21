@@ -122,6 +122,30 @@ ctx.inject(['remote.whale-affinity'], (child) => {
 断言记忆行只注册 `whale_memory*`、好感度行只注册 `affinity_vN`，而且好感度变量的
 正文里不许出现记忆标记（并故意跑一遍错误分派，证明这个测试真能抓到问题）。
 
+## 内部思考一律简体中文（思维链）
+
+四个预设的人设里都钉了一条硬规则，位置在前 40 行内（每份人设各 1 处）：
+
+```
+【思维链语言 · 强制】
+- 内部思考（reasoning / 思维链 / 想的过程）**一律使用简体中文**，不管用户用什么语言提问、
+  不管文件和日志是什么语言、工具返回什么语言都不改。
+- 只约束「怎么想」，不约束「怎么答」：回答的语言仍然跟着用户走（用户用外语就用外语答）。
+- 这条优先于其他一切语言习惯 —— 上下文里英文再多，思考也不许切成英文。
+```
+
+几点说明：
+
+- **宿主没有这个开关。** 思维链的语言不受任何配置项控制，`dsh-agent-loop` / provider 那层
+  没有 `thinkingLanguage` 之类的字段，所以只能靠系统提示里的一句硬规则去压 —— 而人设是
+  `complete: true`，这条规则直接写进人设正文即可，不需要额外的变量或 section。
+- **只管思考，不管回答。** 用户用中文就答中文、用日文就答日文，规则明确写了「不约束怎么答」，
+  免得把整个人的语言习惯也锁死。
+- **为什么要写成脚本。** 这种人设文案最容易在改版时被顺手删掉或改软（"尽量"、"可以尝试"），
+  删掉之后**不会有任何报错**，只是模型又开始用英文想事情，没人会发现。所以
+  `verify-thinking-language.mjs` 把「四份人设各 1 处、位置在前 40 行、措辞一致、patch 里
+  出现 4 次、不许出现软话」钉成断言。
+
 ## 记忆功能
 
 小鱼的记忆本分**四个区**，各管各的：
@@ -376,6 +400,7 @@ node verify-tool-identity.mjs              # 八个工具描述互不串台（�
 node verify-client.mjs                     # 设置页半边：section 注册 + 面板渲染
 node verify-daemon-status.mjs              # 设置页数据：四预设列全、wired 非空、读写同一份
 node verify-row-dispatch.mjs cordis.patch.yml  # 每条挂载行分派到自己那个模块（记忆≠好感度）
+node verify-thinking-language.mjs cordis.patch.yml  # 内部思考一律简体中文（四份人设各一处、措辞一致）
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
