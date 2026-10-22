@@ -8,7 +8,7 @@
  *   · 鲸鱼娘涩涩版Agent预设  persona-v3-naughty.md   → <DSH_HOME>/whale-loli-v3-naughty.md
  *   · 鲸鱼娘女儿版Agent预设  persona-v4-daughter.md  → <DSH_HOME>/dsh-whale-daughter.md
  *
- * 两件事都由 `cordis.patch.yml` 完成：
+ * 全靠 `cordis.patch.yml` 完成：
  *   1. 四条 `@deepseek-ai/dsh-agent-preset` 声明 —— 各自的 config 就是一个预设本体
  *      （id / name / description / order / plugins），被 `agentPresets.register()`
  *      注册后即出现在 Agent 预设界面。
@@ -17,19 +17,19 @@
  *
  * 记忆不串靠三层隔离：文件名不同、变量名不同、写入工具名不同 + 预设 scope 不同。
  *
+ * 好感度（affinity）已于 0.9.16 整体移除，见文件末尾的说明。
+ *
  * 本文件同时导出预设元信息与人设正文，供构建 / 校验脚本复用。
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { apply as applyMemory, inject as memoryInject, name as memoryName } from './memory.js';
-import { apply as applyAffinity, name as affinityName } from './affinity.js';
-import { apply as applyDaemon, inject as daemonInject } from './daemon.js';
-import { AFFINITY_TOOLS, AFFINITY_VARIABLES, PRESETS } from './presets.js';
+import { PRESETS } from './presets.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-// 预设清单本身住在 `./presets.js`（daemon 也要读同一份，见那里的注释）。
-export { AFFINITY_TOOLS, AFFINITY_VARIABLES, PRESETS, PRESET_IDS, presetById } from './presets.js';
+// 预设清单本身住在 `./presets.js`。
+export { PRESETS, PRESET_IDS, presetById } from './presets.js';
 
 /** 原版预设 id（兼容旧引用）。 */
 export const PRESET_ID = PRESETS[0].id;
@@ -104,48 +104,18 @@ export {
   ZONE_ARCHIVE,
 } from './memory.js';
 
-/** 本插件在宿主组合里的行为：挂载记忆行（file / variableName / toolName 由预设各自传入）。 */
-function apply(ctx, config = {}) {
-  return applyMemory(ctx, config);
-}
-
 /**
- * 宿主级那一行（`config.daemon: true`）挂的是好感度守护进程。
+ * 本插件在宿主组合里的行为：挂载记忆行（file / variableName / toolName 由预设各自传入）。
  *
- * 为什么非要挤进默认导出：宿主的 client-modules 只会扫描 `ctx.loader.entries()`
- * 里那些 **specifier 本身能被解析成包** 的行（`exactPackageSpecifier` 只认
- * 不带斜杠的裸名，或用 `createRequire().resolve('<spec>/package.json')` 能解到的
- * subpath）。我们的 daemon 原先写成 `name: 'dsh-whale-loli/affinity-daemon'`，
- * 而 `dsh-whale-loli/affinity-daemon/package.json` 解析不到
- * （`ERR_PACKAGE_PATH_NOT_EXPORTED`），于是 `dsh.client` 永远不被发现，
- * 「设置 → 好感度」那一栏也就永远不出现。
- *
- * 而预设里的那几行 `dsh-whale-loli` 又不在宿主根 Loader 的 entries 里
- * （它们在预设自己的 scope 里），同样扫不到。
- *
- * 所以让宿主级那一行直接用裸包名 `dsh-whale-loli`，靠 `config.daemon` 分派到
- * daemon —— 这样 specifier 解析得动，manifest 带 `dsh.client`，客户端被挂上。
+ * ⚠️ 分派注意：patch 里所有挂载行都用**裸包名** `dsh-whale-loli`（宿主 client-modules
+ * 的 `locatePkgJson` 只认裸名，见旧版本注释），所以每一行都会进到这里。
+ * 现在只剩记忆行一种，直接转 `applyMemory` 即可；`config.row` 保留在 patch 里
+ * 作为显式标记，将来再加新的行类型时必须在这里按 `config.row` 分派 ——
+ * 0.9.10 就是漏了分派，4 条好感度行全落进记忆模块，导致 `{{affinity_vN}}`
+ * 被注入记忆文件正文。
  */
 function applyEntry(ctx, config = {}) {
-  if (config?.daemon === true) return applyDaemon(ctx, config);
-  // 好感度行必须自己分派出去。
-  //
-  // 事故（0.9.10 及以前）：所有行都用裸包名 `dsh-whale-loli`（client 发现机制要求，
-  // 见上面那段注释），而这里只判断了 `daemon`，于是 4 条 `whale-affinity` 行全部
-  // 落进 `applyMemory()`。记忆插件不认识 scope，`config.file` 缺失就退回默认的
-  // `whale-loli.md` —— 结果：
-  //   · `{{affinity_v1}}` 里注入的是**记忆文件正文**（人设的好感度段变成第二份记忆）；
-  //   · 每个预设多出一个把摘要写进 whale-loli.md 的 `affinity_vN_set` 工具（工具串台）。
-  // 现在按 `config.row` 显式分派，并保留形状兜底（有 scope、没 file ⇒ 好感度行）。
-  if (config?.row === 'affinity' || (config?.scope !== undefined && config?.file === undefined)) {
-    return applyAffinity(ctx, config);
-  }
   return applyMemory(ctx, config);
-}
-
-/** 好感度行（scope / variableName / toolName / commandName 由预设各自传入）。 */
-function applyAffinityRow(ctx, config = {}) {
-  return applyAffinity(ctx, config);
 }
 
 export default {
@@ -153,33 +123,25 @@ export default {
   // 注意：`inject` 是静态声明，只能写作用域里**一直存在**的服务名。
   // 千万别把不存在的服务名写进来 —— 宿主会一直等它，结果是**所有**预设
   // 都挂在 `agent-preset/invalid` 上加载失败，而且报错只提插件名不提字段，
-  // 极难定位。
-  //
-  // 这一行是「记忆行」和「宿主级 daemon 行」**共用**的，两边都得能起来。
-  // memory 只要 systemPrompt（预设里必然存在）；daemon 现在声明为空
-  // （只用 ctx.provide / ctx.get / ctx.reflect，全是 cordis 内建）。
-  // 曾经 daemon 声明了 ['reflect','typert']，于是宿主那一行永远 waiting for
-  // typert、apply() 从不执行，设置页只报「远程方法未挂载」。
-  inject: [...new Set([...memoryInject, ...daemonInject])],
+  // 极难定位（compaction / commands / typert 都踩过）。
+  inject: [...new Set([...memoryInject])],
   apply: applyEntry,
 };
 
 // 让 `whale-memory` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。
-export { apply as whaleMemoryApply, memoryName };
+export { memoryName };
+export { apply as whaleMemoryApply } from './memory.js';
 
-// 让 `whale-affinity` 也能作为本包的一个入口被挂载（patch 里用的是这个名字）。
-export { apply as whaleAffinityApply, affinityName, applyAffinityRow };
-
-export {
-  MIN_AFFINITY,
-  MAX_AFFINITY,
-  DEFAULT_AFFINITY,
-  BANDS,
-  bandOf,
-  clampAffinity,
-  readAffinity,
-  writeAffinity,
-  affinityPath,
-  affinityDir,
-  renderAffinity,
-} from './affinity.js';
+/*
+ * 好感度（affinity）已于 0.9.16 整体移除。
+ *
+ * 为什么删：它从设计上就是「建议」而不是「约束」—— 靠一段提示变量 + 一张冲突裁决表
+ * 去压一个上万字的人设，实测压不住（活人版设成 -100，提示里「不共戴天的仇人」写得
+ * 清清楚楚，她照样第一句「在呢，主人~」）。宿主没有能真正约束模型风格的机制，
+ * 继续加码只会让人设越来越自相矛盾。既然做不到，就不留半成品。
+ *
+ * 一并删掉的：src/affinity.js、src/daemon.js、lib/client.js、设置页「好感度」面板、
+ * 四条 whale-affinity 挂载行、宿主级 whale-affinity-daemon 行、人设里的好感度段与
+ * {{affinity_vN}} 占位符、affinity 相关校验脚本，以及 ~/.dsh/affinity/ 状态文件。
+ * 记忆系统（variable 读 + tool 写）不受影响。
+ */

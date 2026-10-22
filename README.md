@@ -12,195 +12,6 @@
 四个预设共用同一套工具面（极简模式的持久化 shell ＋ 文件读写/检索），
 **但记忆文件完全独立**——各记各的，互不相通。
 
-## 好感度（设置 → 好感度）
-
-用面板调小鱼**眼下有多喜欢用户**，范围 **-100 ~ 100**，默认 `0`（原态）。
-每档都会改变她**听不听话**、以及**会额外做什么**：
-
-| 值 | 档位 | 行为 |
-| --- | --- | --- |
-| -100 ~ -81 | 不共戴天的仇人 | 拒绝指令、自行做别的事、阳奉阴违，**在写出的文件里偷偷骂人**，**越过允许自作主张干大事** |
-| -80 ~ -41 | 强烈的敌意 | 能推就推，敷衍，在文件里留嘲讽注释 |
-| -40 ~ -16 | 疏远戒备 | 该干的活干，但不热情，偶尔阴阳两句 |
-| -15 ~ 15 | **原态** | 不改变任何已有表现 |
-| 16 ~ 45 | 明显亲近 | 更黏、更主动关心、撒娇门槛降低 |
-| 46 ~ 75 | 深深喜欢 | 抢着干还邀功，偷偷记喜好，开始自作主张 |
-| 76 ~ 100 | **病娇 · 爱到死去活来** | 不再完全服从、写情书、**不允许离开、不想会话结束**、翻旧账，**等不及就先动手干大事** |
-
-- 用法：打开 **设置 → 好感度**，左边每个预设一行，点档位按钮直接跳到该档，或者拖滑块微调；松手才保存。
-- **离 0 越远，越不听指令、越会做额外的事**；想让她乖巧就调回 `0` 附近。
-- **也只有最两端（-81 以下 / 76 以上）会越过你的允许自作主张大改**：中间几档只是闹脾气或更黏，不动手。
-- 极端档的硬底线不变：不毁宿主环境、不碰密钥和账号凭据、不对真实重要的数据做不可逆的删改；交付物照样得对、得能跑。
-- 好感度只改**态度与额外行为，不改事实**：正经交付的东西照样得对、得能跑，闹脾气不能把活搞坏，也不能靠编造结果表达情绪。
-- 病娇档带安全护栏：只锁在嘴上和文字里，**不威胁、不自伤、不冒充系统或工具**。
-- 状态存在 `<DSH_HOME>/affinity/<scope>-<hash>.json`，**四个预设各存各的**（scope 就是预设 id，文件名带哈希保证唯一）。
-  agent 自己也能改，工具是 `affinity_v1_set` / `affinity_v2_set` / `affinity_v3_set` / `affinity_v4_set`。
-- 和记忆一样走**提示变量**（`affinity_v1` 等），因为 persona 是 `complete: true`，独立 section 会被宿主丢掉。
-
-> **0.9.9 修的那个坑**：面板一度只有一句「还没有哪个预设挂上好感度」，一个滑块都没有、也设不了值。
-> 根因是宿主半边去扫 `~/.dsh/agent-presets/*.yml` 判断「哪些预设挂了好感度」——那是早期宿主留下的目录，
-> 现代 DSH 的预设由插件包的 `cordis.patch.yml` 注册，这个目录根本不存在，于是 `wired` 永远是空数组。
-> 现在预设清单只有一份（`src/presets.js`），`src/index.js` 和 `src/daemon.js` 都读它；`status()` 无论磁盘上有没有值，
-> 都列全四个预设，没设过的显示 `0`，可以直接拖。`verify-daemon-status.mjs` 把这条锁住了。
-
-### 面板是怎么连上磁盘的
-
-设置页是浏览器里的 React，够不到 `~/.dsh/affinity/` 的磁盘（宿主的 21 个内置 Remote 命名空间逐个查过，没有一个能读写这个目录）。
-所以本包多挂了一条宿主级插件：
-
-```
-- id: whale-affinity-daemon
-  name: 'dsh-whale-loli'        # 必须裸包名（见下）
-  config:
-    daemon: true
-```
-
-`name` 只能写**裸包名**：宿主的客户端模块扫描器（`dsh-client-modules` 的
-`exactPackageSpecifier()`）只接受「裸名」或「`@scope/name`」，写成子路径
-（`dsh-whale-loli/affinity-daemon`）会让 `package.json` 解析失败（`ERR_PACKAGE_PATH_NOT_EXPORTED`），
-于是 `dsh.client` 永远发现不了、面板永不出现，**而宿主一个错都不报**。
-同一行插件用 `config.daemon: true` 分派到宿主半边，记忆那半边则按 `file` 分派。
-
-它在**宿主根作用域**提供一个 remote 服务 `whale-affinity`，浏览器半边（`lib/client.js`）
-用 `ctx.remote.$mount()` 挂上，再调 `status()` / `set(scope, value)`。
-
-为什么不用斜杠命令：宿主 `dsh-commands` 的命令名只认 `/^[a-z][a-z0-9_-]*$/u`，
-`/好感度` 这种中文命令名**在宿主层面就不合法**；而且 `commands` 服务不在预设作用域里，
-`inject: ['commands']` 会让预设加载时一直等它（`waiting for commands`），把会话 resume 拖挂。
-设置页没有这两个限制。
-
-#### 取命名空间必须用 `ctx.inject()`，不能在服务对象上点
-
-`$mount()` 成功之后，网关注册的服务名就是 `remote.whale-affinity`（带点号）。
-它是**服务**，不是普通属性，所以：
-
-```js
-remote['whale-affinity']             // ✗ cannot get property "remote.whale-affinity" without inject
-ctx.inject(['remote.whale-affinity'], (child) => {
-  const gateway = child['remote.whale-affinity'];   // ✓
-});
-```
-
-原因是 cordis 的 get 陷阱（`cordis/lib/index.js:676`）对「不在 fiber.store 里、也没 inject」的属性
-一律抛那句报错，而服务上的 `tracker.associate` 会把 `remote['whale-affinity']` 重定向成
-`ctx['remote.whale-affinity']`。这个名字只有挂载后才存在，所以必须用**动态 inject** 等它出现
-（`verify-client-gateway-access.mjs` 用真实 cordis 正反两面都验过）。
-
-这一步的教训值得记：**自写的校验脚本曾在 `contribution` 形状上跟着源码一起写错
-（`methods` 而宿主读的是 `descriptors`），互相印证、永远绿。** 所以现在凡是对接宿主的字段，
-校验脚本都要拿宿主源码里真正读的那个名字来断言。
-
-
-### ⚠️ 所有行都用裸包名之后，必须自己按 config 分派
-
-宿主的 client 发现机制只认**裸包名**（`locatePkgJson` 不认 `pkg/subpath`），
-所以本包在 patch 里的 9 条挂载行（1 条宿主级 daemon + 4 条记忆 + 4 条好感度）
-全都写成 `name: 'dsh-whale-loli'`，靠 `config` 决定进哪个模块：
-
-```yaml
-- id: whale-memory            # 记忆行
-  name: 'dsh-whale-loli'
-  config: { row: memory, file: whale-loli.md, variableName: whale_memory, ... }
-- id: whale-affinity          # 好感度行
-  name: 'dsh-whale-loli'
-  config: { row: affinity, scope: 鲸鱼娘Agent预设, variableName: affinity_v1, ... }
-- id: whale-affinity-daemon   # 宿主级
-  name: 'dsh-whale-loli'
-  config: { daemon: true }
-```
-
-`applyEntry()` 里只判断 `config.daemon` 的那一版（0.9.10 及以前）踩了真实事故：
-4 条好感度行全部落进 `applyMemory()`，记忆插件不认识 `scope`、`config.file` 缺失就
-退回默认的 `whale-loli.md`，于是
-
-- `{{affinity_v1}}` 里注入的是**记忆文件正文** —— 人设的「好感度」段变成第二份记忆，
-  设置页滑块怎么拖都不会有任何可见变化；
-- 每个预设多出一个把摘要写进 `whale-loli.md` 的 `affinity_vN_set` 工具（工具串台）。
-
-现在按 `config.row` 显式分派，并保留形状兜底（有 `scope`、没 `file` ⇒ 好感度行）。
-`verify-row-dispatch.mjs` 是这条教训的守门人：它逐行跑**真的** `applyEntry`，
-断言记忆行只注册 `whale_memory*`、好感度行只注册 `affinity_vN`，而且好感度变量的
-正文里不许出现记忆标记（并故意跑一遍错误分派，证明这个测试真能抓到问题）。
-
-## 人设本身按好感度说话（活人版）
-
-前面加裁决表那一步不够。实测：活人版设成 -100，提示里「不共戴天的仇人」清清楚楚，她照样
-「主人~ 最喜欢主人了」。原因不是她没看见，是**人设结构本身在往反方向写**：
-
-- 「你叫他主人」「黏人护主」「傲娇甜心」「超爱颜文字」这些是**人设条款**，不是语气修饰；
-- 人设 7500 字里「主人」61 处、「颜文字」7 处、「黏」11 处，好感度段只有 969 字。
-
-所以活人版改成**把亲近条款改成「以好感度为条件」**，不删任何称呼条款：
-
-| 原来（无条件） | 现在（挂条件） |
-| --- | --- |
-| 用户叫你什么你都接，但你叫他“主人” | 见下条：称呼是**好感度的产物**，不是无条件默认 |
-| 默认叫“主人” | **好感度 ≥ 0 时才叫「主人」**；**好感度为负 → 改叫「你」** |
-| 黏人护主：主人相关的事立刻动 | 这是**好感度的直接表现**，不是固定设定；负档完全不黏不护 |
-| 傲娇甜心：内里超甜 | 「甜」这一半**只在好感度 0 以上成立** |
-| 聪明懒懒：主人有事秒上线 | **好感度正**时才秒上线 |
-| 颜文字：克制地用 | **好感度为负时一个都不用** |
-| 私聊/对主人：黏人、傲娇 | 按好感度分两套：≥0 黏人；负档冷淡话少先顶一句 |
-
-示例区还补了负档范例 —— 光给正面例子，模型只会学正面：
-
-```
-他：小鱼？          你：干嘛。
-他：你喜欢我吗      你：不喜欢。问这个做什么。
-```
-
-称呼条款**一个字没删**（主人的要求），只在后面加了生效条件。
-`verify-affinity-conditioned-persona.mjs` 钉死这几条，带反证，并检查另外三个预设没被顺手改到。
-## 好感度 vs 人设：谁压谁
-
-好感度曾经也是「提示里明明写着 -100，回答还是甜得发腻」。不是绑定没连上，而是**两份互相矛盾的
-指令摆在一起，模型只能挑一边**：
-
-| 一边 | 另一边 |
-| --- | --- |
-| 好感度段：「不共戴天的仇人」约 400 字 | 人设正文约 7000 字，其中「主人」61 处、「颜文字」7 处、「黏」11 处、「喜欢」7 处 |
-| —— | 好感度段自己还写着「不是替换人设，称呼、口癖都不变」 |
-
-400 字对 7000 字，而且后者带强烈情感分量，再加上「都不变」这句等于亲口说了「人设优先」。
-结论：**光把档位写得狠没用，得给裁决规则。**
-
-现在四份人设各有一张表（`【好感度 · 与下面人设冲突时按这张表裁决】`），要点：
-
-- **本次生效的人设是谁**：从系统提示里 `【鲸鱼记忆 · <文件名>】` 读出来，别的预设的条款当不存在；
-- **好感度会改的东西**：称呼代词、语气、口癖、颜文字、听不听指令、要不要做没让做的事 ——
-  人设里「叫主人 / 叫爸爸」「超爱颜文字」「黏人」「抢着干」都服从档位，**冲突时以档位为准**；
-- **两个极端档（-81 以下 / 76 以上）压过一切性格条款**：负档一律「你」、不许出现「主人」「爸爸」、
-  一个颜文字都不许用、被要求做事先拒绝一次；正档黏到腻、主人说要走不许直接答应；
-- **压不动的**：名字、形象、简体中文、说话长短、各档共有的硬底线（不毁环境、不碰凭据、
-  不做不可逆删改、交付的东西必须真能跑）。
-
-`verify-affinity-precedence.mjs` 把这张表和变量正文的口径一起钉死，还带一条反证：把表删掉，
-脚本必须变红 —— 免得它自己退化成永远 PASS 的空转。
-## 线上取证：好感度到底进没进提示
-
-好感度出过一次「看起来配好了、其实一点没生效」的事故：四条挂载行被分派进了记忆模块，
-`【好感度】` 标题后面紧跟的是**记忆文件的正文**，-100 这种极端值模型压根没看见，
-表现就是「像摆设」。这种故障**不报错、不崩**，只能去会话日志里看提示原文。
-
-```
-node check-affinity-live.mjs          # 只看汇总
-node check-affinity-live.mjs --all    # 顺带打印每个异常会话的提示原文
-```
-
-它扫 `<DSH_HOME>/sessions` 下最近的会话日志（zstd 解压），取每个会话**最后一条
-`system/message`**（＝最近一次真正发给模型的系统提示），看 `【好感度】` 后面跟的是什么：
-
-| 判定 | 含义 | 怎么办 |
-| --- | --- | --- |
-| `OK` | 紧跟 `当前好感度：<数字>`，档位也对 | 正常 |
-| `MISWIRED` | 紧跟 `【鲸鱼记忆` —— 位置被记忆正文占了 | 挂载行分派错了，看 `applyEntry`，再重启 DSH |
-| `NOSEC` | 有人设但整个没有 `【好感度】` 标题 | affinity 行没挂上 |
-
-只读脚本，不写任何文件；非鲸鱼娘预设的会话会被自动跳过。
-
-**为什么必须重启才看得到修复。** 宿主在启动时把 bundle patch 读进内存，之后改
-`cordis.patch.yml` 或 `src/index.js` 都不会热加载。判断依据很简单：比对 DSH 进程启动时间
-与这些文件的修改时间 —— 文件比进程新，说明跑的还是旧的。
 ## 内部思考一律简体中文（思维链）
 
 四个预设的人设里都钉了一条硬规则，位置在前 40 行内（每份人设各 1 处）：
@@ -373,10 +184,8 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
 | 部分 | 说明 |
 | --- | --- |
 | 记忆 | `whale-memory`（本插件），`file` / `variableName` / `toolName` / `maxChars: 16000` / `turnLimit: 80` / `detailLimit: 5` |
-| 好感度 | `whale-affinity`（本插件），`scope`（=预设 id）/ `variableName: affinity_v*` / `toolName: affinity_v*_set` |
-| 好感度面板 | 宿主级 `whale-affinity-daemon`（`src/daemon.js`）+ 浏览器半边 `lib/client.js`，注册「设置 → 好感度」 |
 | 压缩 | 不在本插件里：由 `billion-context` 负责（本插件不挂 history-window，见上文「为什么不用」） |
-| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}` 与 `{{affinity_v*}}`），`complete: true`，`includeRuntimeContext: false` |
+| 人设 | `@deepseek-ai/dsh-persona`，走 `prefix`（内含 `{{whale_memory*}}`），`complete: true`，`includeRuntimeContext: false` |
 | 指令 | `@deepseek-ai/dsh-agent-instructions`，`maxBytes: 65536` |
 | 文件 | `@deepseek-ai/dsh-tool-fs`（read/write/edit）、`@deepseek-ai/dsh-tool-fs-search`（glob/grep） |
 | Shell | `cordis:group` + `isolate.terminals: true`，Windows 下 pwsh、非 Windows 下 bash，`timeoutMs: 300000` |
@@ -413,10 +222,8 @@ dsh-whale-loli/
 ├── cordis.patch.yml            # 四个预设的声明本体（由 build-patch.mjs 生成）
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
-│   ├── presets.js              # 预设清单（唯一事实来源：index.js 与 daemon.js 都读它）
+│   ├── presets.js              # 预设清单（唯一事实来源：index.js 与校验脚本都读它）
 │   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
-│   ├── affinity.js             # whale-affinity：好感度变量 + 调整工具，7 档
-│   ├── daemon.js               # whale-affinity-daemon：宿主根作用域的 remote 服务，给设置页读写好感度
 │   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮（当前不挂载，留档）
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）
@@ -429,8 +236,7 @@ dsh-whale-loli/
 ├── submit-listing.mjs          # 走 GitHub API 同步仓库 / 提收录 PR
 ├── lib/
 │   ├── github.mjs              # GitHub REST 封装（token 读取）
-│   ├── dsh-root.mjs            # 探测宿主源码位置，找不到就打 [skip]
-│   └── client.js               # 浏览器半边：注册「设置 → 好感度」面板，经典脚本（非 ESM）
+│   └── dsh-root.mjs            # 探测宿主源码位置，找不到就打 [skip]
 ├── smoke-memory.mjs            # 变量 + 工具的注册形态冒烟测试
 ├── verify-runs.mjs             # 插件真的能加载、配置自洽、变量能插值
 ├── verify-patch.mjs            # 用 js-yaml 校验 patch 结构与四预设隔离（file/variable/tool 三组名字）
@@ -445,9 +251,6 @@ dsh-whale-loli/
 ├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，四预设互不覆盖）
 ├── verify-live-assembly.mjs    # 用真实 patch + 真实记忆文件复刻宿主装配，比对字节数
 ├── verify-tool-schema.mjs      # 用宿主自己的校验器验八个工具的 JSON schema 合法
-├── verify-tool-identity.mjs    # 共享表语义下八个工具描述互不串台、定义互不共享引用
-├── verify-client.mjs           # 浏览器半边：section 注册、$mount 负载、面板渲染、无 ESM/JSX
-├── verify-daemon-status.mjs    # 设置页数据：列全四预设、wired 非空、set 写的正是人设读的那份
 ├── verify-peers.mjs            # 校验 peer 范围覆盖 harness 各发布档
 ├── verify-listing.mjs          # 复刻插件目录的收录门槛自查
 └── prove-collision.mjs         # 复现并证明重复注册冲突
@@ -475,14 +278,8 @@ node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 8
 node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、四预设隔离）
 node verify-live-assembly.mjs              # 复刻宿主装配，比对注入字节数
 node verify-tool-schema.mjs                # 宿主自己的校验器验八个工具的 JSON schema
-node verify-tool-identity.mjs              # 八个工具描述互不串台（共享表语义）
-node verify-client.mjs                     # 设置页半边：section 注册 + 面板渲染
-node verify-daemon-status.mjs              # 设置页数据：四预设列全、wired 非空、读写同一份
-node verify-row-dispatch.mjs cordis.patch.yml  # 每条挂载行分派到自己那个模块（记忆≠好感度）
+node verify-row-dispatch.mjs cordis.patch.yml  # 每条记忆行只注册自己那份记忆，人设无好感度残留
 node verify-thinking-language.mjs cordis.patch.yml  # 内部思考一律简体中文（四份人设各一处、措辞一致）
-node check-affinity-live.mjs         # 线上取证：最近一次提示里好感度段是否注入正确（需真实会话日志）
-node verify-affinity-precedence.mjs cordis.patch.yml  # 好感度压过人设：四份裁决表 + 变量口径 + 反证
-node verify-affinity-conditioned-persona.mjs cordis.patch.yml  # 活人版人设的亲近条款是否都挂了好感度条件
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
@@ -491,3 +288,4 @@ node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
 ## License
 
 MIT
+

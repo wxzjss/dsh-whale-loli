@@ -67,19 +67,8 @@ jobs:
           node verify-memory-archive.mjs
           node verify-live-assembly.mjs
           node verify-tool-schema.mjs
-          node verify-tool-identity.mjs
-          node verify-client.mjs
-          node verify-client-contribution.mjs
-          node verify-client-discovery.mjs
-          node verify-daemon-inject.mjs
-          node verify-daemon-status.mjs
-          node verify-daemon-service.mjs
-          node verify-client-gateway-access.mjs
-          node verify-host-ledger.mjs
           node verify-row-dispatch.mjs cordis.patch.yml
           node verify-thinking-language.mjs cordis.patch.yml
-          node verify-affinity-precedence.mjs cordis.patch.yml
-          node verify-affinity-conditioned-persona.mjs cordis.patch.yml
           node smoke-memory.mjs
           node verify-workflow.mjs
 
@@ -143,73 +132,8 @@ jobs:
           lst="$(node verify-listing.mjs 2>&1)"
           echo "$lst"
           echo "$lst" | grep -q "RESULT: PASS"
-          # 八个工具的定义互不共享：曾经出过好感度工具拿到记忆文案的事故
-          # （宿主把某一份定义按引用摊进了别的预设的请求头），这里用共享表
-          # 语义复刻一遍，任何一个描述串台就红。
-          ident="$(node verify-tool-identity.mjs 2>&1)"
-          echo "$ident"
-          echo "$ident" | grep -q "RESULT: PASS"
-          # 浏览器半边：设置页 section 能注册、$mount 负载过得了客户端浅校验、
-          # 面板渲染得出档位按钮，且全程没有 renderSlot / 裸 JSX / ESM 语句。
-          client="$(node verify-client.mjs 2>&1)"
-          echo "$client"
-          echo "$client" | grep -q "RESULT: PASS"
-          # 客户端 contribution 必须过得了 `$mount()` 的全部校验（strict codec /
-          # 重复方法 / 命名冲突 / wire 名）。0.9.5 之前面板一直报「远程方法未挂载」，
-          # 而宿主日志证明服务活着 —— 失败在浏览器侧，报错只在 devtools 里，
-          # 用户和我都看不到。这个脚本把那些校验规则抄下来离线跑，不许静默跳过。
-          contrib="$(node verify-client-contribution.mjs 2>&1)"
-          echo "$contrib"
-          echo "$contrib" | grep -q "RESULT: PASS"
-          if echo "$contrib" | grep -q "\[skip\]"; then
-            echo "::error::verify-client-contribution 在 CI 里被跳过了，但它不该跳过"
-            exit 1
-          fi
-          # 宿主能不能**发现**客户端 bundle。0.9.1 之前设置页一直看不到「好感度」：
-          # 宿主 client-modules 只扫 ctx.loader.entries() 里 specifier 解析得成包的
-          # 行，而我们把守护进程写成了 'dsh-whale-loli/affinity-daemon'，它的
-          # package.json 解析不到（ERR_PACKAGE_PATH_NOT_EXPORTED），于是 dsh.client
-          # 永不被发现，而且宿主**不报任何错**。这里复刻宿主两段判定直接对着
-          # profile 安装态跑。
-          disc="$(node verify-client-discovery.mjs 2>&1)"
-          echo "$disc"
-          echo "$disc" | grep -q "RESULT: PASS"
-          # 守护进程那一行的 inject 必须能被满足。0.9.2 的故障：inject 里写了
-          # 'typert'（只有 dsh-typert-registry 挂载时才有），而用户的 profile 里
-          # 没有它 —— cordis 不报错，只是永远 waiting，apply() 一次都不执行，
-          # 设置页于是报「远程方法 whale-affinity.status 未挂载」。
-          dinj="$(node verify-daemon-inject.mjs 2>&1)"
-          echo "$dinj"
-          echo "$dinj" | grep -q "RESULT: PASS"
-          # 设置页要的数据必须真的齐：`status()` 无论磁盘上有没有值都列全四个
-          # 预设，`wired` 不能是空数组（0.9.8 的故障：它去扫一个宿主早就不用的
-          # 目录，于是面板只剩「还没有哪个预设挂上好感度」，一个滑块都没有）。
-          # 这个脚本只用临时 DSH_HOME，不依赖宿主，所以可以硬要求 PASS。
-          dstat="$(node verify-daemon-status.mjs 2>&1)"
-          echo "$dstat"
-          echo "$dstat" | grep -q "RESULT: PASS"
-          # 服务必须在**真实 cordis** 里 strict 可见（网关的判定路径）。0.9.x 的
-          # 故障形态是：服务 provide 进表了（loose 查得到），但提供者 fiber 卡在
-          # Pending(1)，于是 `ctx.get(serviceKey)` 返回 undefined、网关整行跳过、
-          # 界面报「远程方法未挂载」，而宿主一个错都不报。这个脚本同时做反证：
-          # apply 抛异常时 strict 查不到。
-          # 它需要宿主的 @deepseek-ai/cordis；裸 runner 上拿不到，会打 [skip] 退出 0
-          # —— 和 verify-peers 一样，**不能**要求它在这里必须 PASS（0.7.2 与 0.9.4
-          # 都是栽在这种「必须有输出」的断言上）。所以只打印，不 grep。
-          dsvc="$(node verify-daemon-service.mjs 2>&1)"
-          echo "$dsvc"
-          # 客户端取命名空间的**唯一**正确姿势：`ctx.inject(['remote.whale-affinity'],
-          # child => …)`。直接 `remote['whale-affinity']` 会被 cordis 的 get 陷阱
-          # 抛 `cannot get property "remote.whale-affinity" without inject`。
-          # 同样要宿主 cordis，裸 runner 上打 [skip]，只打印不 grep。
-          gw="$(node verify-client-gateway-access.mjs 2>&1)"
-          echo "$gw"
-          # 宿主侧账本：能按裸名定位到 bundle、dsh.client 字段齐全、桥接日志活着。
-          # 同样依赖本机安装态（profile + ~/.dsh），裸 runner 上会 [skip]，只打印。
-          ledg="$(node verify-host-ledger.mjs 2>&1)"
-          echo "$ledg"
-          # 挂载行分派：记忆行只能注册 whale_memory*、好感度行只能注册 affinity_vN。
-          # 0.9.10 及以前 4 条好感度行全落进 applyMemory()，好感度段被塞了记忆正文。
+          # 挂载行分派：每条记忆行只能注册自己那份记忆变量与工具。
+          # 0.9.10 及以前那些错分派的行全落进 applyMemory()，变量被注入记忆正文。
           # 需要宿主的 js-yaml，裸 runner 上打 [skip]，所以只打印不 grep。
           disp="$(node verify-row-dispatch.mjs cordis.patch.yml 2>&1)"
           echo "$disp"
@@ -217,14 +141,6 @@ jobs:
           think="$(node verify-thinking-language.mjs cordis.patch.yml 2>&1)"
           echo "$think"
           echo "$think" | grep -q "RESULT: PASS"
-          # 好感度压过人设：纯文本断言，CI 必须真跑。
-          prec="$(node verify-affinity-precedence.mjs cordis.patch.yml 2>&1)"
-          echo "$prec"
-          echo "$prec" | grep -q "RESULT: PASS"
-          # 人设按好感度说话：纯文本断言，CI 必须真跑。
-          cond="$(node verify-affinity-conditioned-persona.mjs cordis.patch.yml 2>&1)"
-          echo "$cond"
-          echo "$cond" | grep -q "RESULT: PASS"
           # 注意：verify-peers 需要 semver（DSH 自带或 npm i -D semver），
           # CI 里两样都没有会打 [skip] 退出 0，所以它**不能**放进这段断言。
 

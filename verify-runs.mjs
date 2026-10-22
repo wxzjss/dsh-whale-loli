@@ -28,13 +28,9 @@ const local = unique.filter((n) => n.startsWith('dsh-whale-loli'));
 const builtin = unique.filter((n) => n.startsWith('@deepseek-ai/') || n.startsWith('cordis:'));
 console.log('   本地入口:', local.join(', '));
 console.log('   内置包  :', builtin.length, '个');
-// 本地入口只允许一个 specifier：裸包名 `dsh-whale-loli`。
-// 它同时承担两个角色，靠 config.daemon 分派：
-//   · 预设里的行（无 daemon）→ src/memory.js / src/affinity.js
-//   · 宿主根作用域那条（daemon: true）→ src/daemon.js（设置页面板的宿主半边）
-// 之所以不能写成 'dsh-whale-loli/affinity-daemon'：宿主 client-modules 只扫
-// specifier 解析得成包的行，而 '<pkg>/affinity-daemon/package.json' 解不动
-// （ERR_PACKAGE_PATH_NOT_EXPORTED），dsh.client 就永远不被发现。
+// 本地入口只有一个 specifier：裸包名 `dsh-whale-loli`，指向 src/index.js。
+// 预设行和记忆行挂的是同一个入口，靠 config.row 识别角色（见
+// verify-row-dispatch.mjs）。0.9.16 起好感度整套删除，不再有 daemon 行。
 const LOCAL_ENTRIES = {
   'dsh-whale-loli': './src/index.js',
 };
@@ -48,11 +44,8 @@ check(
   '没有任何行用子路径 specifier 挂载本包',
   !/name:\s*'dsh-whale-loli\//.test(patch),
 );
-check('好感度守护进程只挂一次（宿主级单例）', patch.split('- id: whale-affinity-daemon').length - 1 === 1);
-check(
-  '守护进程行用裸包名 + daemon:true 分派',
-  /- id: whale-affinity-daemon\n\s+name: 'dsh-whale-loli'\n\s+config:\n\s+daemon: true/.test(patch),
-);
+check('没有残留的好感度守护进程行', !patch.includes('whale-affinity-daemon'));
+check('没有残留的好感度变体行', !/row:\s*affinity/.test(patch));
 
 // 本地入口必须真的能 import
 for (const spec of local) {
@@ -86,21 +79,11 @@ function interpolate(text, vars) {
   return out + text.slice(last);
 }
 
-/** 每个预设自己的好感度变量，与 build-patch.mjs 的 toolRows() 参数保一致。 */
-const AFFINITY_VARS = {
-  鲸鱼娘Agent预设: 'affinity_v1',
-  鲸鱼娘活人版Agent预设: 'affinity_v2',
-  鲸鱼娘涩涩版Agent预设: 'affinity_v3',
-  鲸鱼娘女儿版Agent预设: 'affinity_v4',
-};
-
 for (const p of idx.PRESETS) {
   const text = idx.personaTextOf(p.id);
   const varName = p.memoryVariable;
-  const affVar = AFFINITY_VARS[p.id];
-  const rendered = interpolate(text, { [varName]: '__INJECTED_MEMORY__', [affVar]: '__INJECTED_AFFINITY__' });
+  const rendered = interpolate(text, { [varName]: '__INJECTED_MEMORY__' });
   check(`${p.id} 变量 ${varName} 被替换`, rendered.includes('__INJECTED_MEMORY__'));
-  check(`${p.id} 变量 ${affVar} 被替换`, rendered.includes('__INJECTED_AFFINITY__'));
   check(`${p.id} 不留裸 {{}}`, !rendered.includes('{{'));
 }
 
@@ -110,11 +93,11 @@ for (const p of idx.PRESETS) {
   const used = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]))];
   const declared = [...patch.matchAll(/variableName: (\S+)/g)].map((m) => m[1]);
   check(`${p.id} 引用的变量都已声明`, used.every((u) => declared.includes(u)), `引用=[${used}] 声明=[${declared}]`);
-  // 人设只许引用自己那两个变量（记忆 + 好感度），防止复制粘贴时串台
-  const mine = [p.memoryVariable, AFFINITY_VARS[p.id]].sort();
+  // 人设只许引用自己那一个记忆变量，防止复制粘贴时串台
+  const mine = [p.memoryVariable];
   check(
     `${p.id} 只引用自己的变量 [${mine.join(', ')}]`,
-    used.length === 2 && used.slice().sort().join() === mine.join(),
+    used.length === 1 && used[0] === mine[0],
     `引用=[${used}]`,
   );
 }

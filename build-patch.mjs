@@ -33,8 +33,13 @@ const personaV2 = readFileSync(root + 'src/persona-v2-live.md', 'utf8');
 const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
 const personaV4 = readFileSync(root + 'src/persona-v4-daughter.md', 'utf8');
 
-/** 每个预设共用的工具面行（含参数化记忆行）。 */
-function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail, presetId, affinityVariable, affinityTool }) {
+/**
+ * 每个预设共用的工具面行（含参数化记忆行）。
+ *
+ * 好感度（whale-affinity）已于 0.9.16 删除：它靠提示变量 + 冲突裁决表去压上万字的
+ * 人设，实测压不住（-100 档照样「在呢，主人~」）。既然做不到就不留半成品。
+ */
+function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDetail }) {
   return `          # 长期记忆：注册成提示变量，由人设开头的 {{${memoryVariable}}} 引用。
           # persona 是 complete:true，宿主会把独立 section 丢掉（见 src/memory.js 顶部注释），
           # 所以记忆必须走 variable 通道；variableName 也要每预设不同，否则同 scope 注册冲突。
@@ -48,22 +53,6 @@ function toolRows({ memoryFile, memoryVariable, memoryMax, memoryTurns, memoryDe
               maxChars: ${memoryMax}
               turnLimit: ${memoryTurns}
               detailLimit: ${memoryDetail}
-          # 好感度：同样走提示变量（persona 是 complete:true）。
-          # scope 就是预设 id，所以四个预设各存各的状态文件，互不串。
-          #
-          # 这里**没有 commandName**：好感度改由「设置 → 好感度」面板调
-          # （宿主级 whale-affinity-daemon + lib/client.js）。斜杠命令这条路走不通：
-          #   · dsh-commands 的命令名正则 /^[a-z][a-z0-9_-]*$/u，中文命令名直接非法；
-          #   · commands 服务不在预设作用域，inject:['commands'] 会让预设加载时
-          #     一直等它（waiting for commands），把会话 resume 拖挂。
-          - id: whale-affinity
-            name: 'dsh-whale-loli'
-            config:
-              row: affinity
-              scope: ${presetId}
-              variableName: ${affinityVariable}
-              toolName: ${affinityTool}
-              showFile: false
           # ⚠️ whale-history-window **不挂**（已确认这条路走不通，见下）。
           #
           # 想做的效果：让「最近 N 轮」以外的内容不计入输入。唯一不自己写事件的办法是调
@@ -137,31 +126,11 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个�
 #   2) 四条 \`dsh-whale-loli\` 记忆行 —— 各挂载本包 src/memory.js 里的 whale-memory，
 #      把该预设自己的记忆文件注册成提示变量、并注册对应的写入工具，
 #      实现四套互不相通的跨会话记忆。
-#   3) 四条 \`dsh-whale-loli\` 好感度行 —— 各挂载本包 src/affinity.js 里的 whale-affinity，
-#      注册提示变量 + 调整工具（主人改档走设置页面板，不走斜杠命令）。
-#   4) 一条 \`whale-affinity-daemon\` 行 —— 挂载 src/daemon.js，在**宿主根作用域**
-#      提供一个 remote 服务，让「设置 → 好感度」面板能读写四个预设的好感度文件。
-#      为什么必须落在宿主这边：设置页是浏览器里的 React，够不到 ~/.dsh 的磁盘；
-#      宿主也没有任何内置 Remote 命名空间能读写 affinity 文件（全查过）。
+#   好感度（whale-affinity）与设置页面板已于 0.9.16 整体移除，见 src/index.js 末尾说明。
 #
 # 记忆隔离要点：四条记忆行的 config.file / config.variableName / config.toolName
 # 都不一样，且分属不同预设 scope，所以四个记忆文件不会被读串或写串。
 - insert:
-    # ── 好感度守护进程（宿主级，只挂一次）─────────────────────────────────
-    # 设置页的面板用 ctx.remote.$mount() 挂到 REMOTE_NAMESPACE 上，
-    # 再调 status() / set(scope, value)。落在宿主根作用域，只为了能直接改盘。
-    #
-    # ⚠️ name 必须是**裸包名**，不能写成 'dsh-whale-loli/affinity-daemon'。
-    #    宿主 client-modules 扫客户端 bundle 时只认 ctx.loader.entries() 里
-    #    specifier 解析得成包的行（不带斜杠的裸名，或
-    #    createRequire().resolve('<spec>/package.json') 解得动的 subpath）。
-    #    '.../affinity-daemon/package.json' 解不动（ERR_PACKAGE_PATH_NOT_EXPORTED），
-    #    dsh.client 就永远不被发现，「设置 → 好感度」也就永远不出现。
-    #    用裸包名 + config.daemon 分派（见 src/index.js 的 applyEntry）。
-    - id: whale-affinity-daemon
-      name: 'dsh-whale-loli'
-      config:
-        daemon: true
 
     # ── 预设一：鲸鱼娘Agent预设（原版）────────────────────────────────────
     - id: preset-鲸鱼娘Agent预设
@@ -180,7 +149,7 @@ const yml = `# dsh-whale-loli bundle patch — 鲸鱼娘 Agent 预设（四个�
 ${block(persona)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘Agent预设', affinityVariable: 'affinity_v1', affinityTool: 'affinity_v1_set' })}
+${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设二：鲸鱼娘活人版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘活人版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -198,7 +167,7 @@ ${toolRows({ memoryFile: 'whale-loli.md', memoryVariable: 'whale_memory', memory
 ${block(personaV2)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘活人版Agent预设', affinityVariable: 'affinity_v2', affinityTool: 'affinity_v2_set' })}
+${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_v2', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设三：鲸鱼娘涩涩版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘涩涩版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -216,7 +185,7 @@ ${toolRows({ memoryFile: 'whale-loli-v2-live.md', memoryVariable: 'whale_memory_
 ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘涩涩版Agent预设', affinityVariable: 'affinity_v3', affinityTool: 'affinity_v3_set' })}
+${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
     # ── 预设四：鲸鱼娘女儿版Agent预设 ────────────────────────────────────
     - id: preset-鲸鱼娘女儿版Agent预设
       name: '@deepseek-ai/dsh-agent-preset'
@@ -234,7 +203,7 @@ ${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memo
 ${block(personaV4)}
               complete: true
               includeRuntimeContext: false
-${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5, presetId: '鲸鱼娘女儿版Agent预设', affinityVariable: 'affinity_v4', affinityTool: 'affinity_v4_set' })}
+${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');
