@@ -283,7 +283,22 @@ node verify-thinking-language.mjs cordis.patch.yml  # 内部思考一律简体�
 node smoke-memory.mjs                      # 变量 + 工具注册形态冒烟
 node verify-peers.mjs                      # peer 范围无预发布坑
 node verify-listing.mjs --topics=dsh-plugin   # 收录门槛自查
+node verify-package-files.mjs              # 包内容干净：无孤立死模块、无残留临时文件
 ```
+
+## 发布出去的那个包，和你本地 `npm pack` 出来的不是一个
+
+`npm pack` 只证明「工作区这一侧干净」，证明不了「上游发出来的包干净」——两者用的不是同一棵树。
+
+0.9.16 就是这么翻的车：本地 `git rm` 掉了 `src/affinity.js` 和 `src/daemon.js`，本地 pack 出来 15 个文件、干干净净；但 `submit-listing.mjs` 走 GitHub Trees API 同步，`base_tree` 语义是**继承**——`entries` 里没写到的路径会原样留在新树里。于是远端 commit 里那两个文件一直活着，CI 检出该 commit 后 `package.json` 的 `files: ["src"]` 把整个 `src` 目录打进包：65 KB 的包里躺着 40 KB 已经不存在的死代码。
+
+修了两处：
+
+1. `submit-listing.mjs` 的 `syncAtomic()`（和 `syncLocalCommits()`）现在会把「远端有、本地索引里没有」的路径用 `sha: null` 从树里移除。第一次跑清掉了 18 个残留（其中还有 `_commitmsg.txt`、`_msg.txt` 两个更早的临时文件）。
+2. 新增 `verify-package-files.mjs` 守本地这一侧：`files` 白名单里的路径都得存在、`src/` 下每个 `.js` 都必须被别处引用（孤立模块正是 `affinity.js` 的形态）、`exports` 指向的文件都在、已删的模块名不许回潮、代码总量和文件数有上限（有残留就会超）、git 索引里不许有临时文件。
+
+**教训**：凡是用 `base_tree` 拼树的地方，都得自己算「删了什么」；只传增改项等于放弃删除能力。
+
 
 ## License
 

@@ -134,6 +134,28 @@ async function syncLocalCommits() {
     const sha = await pushFile(path, content, `chore: sync ${path} via Contents API`);
     console.log(`  ✓ ${path} -> ${sha}`);
   }
+  // 同样要处理「本地已删、远端还在」的文件（这条路径只做增改，见 syncAtomic 的说明）。
+  const localPaths = new Set(Object.keys(FILES).filter((p) => FILES[p] !== null));
+  let remotePaths = [];
+  try {
+    const tree = await glab(`/repos/${REPO}/git/trees/${BRANCH}?recursive=1`);
+    remotePaths = tree.tree.filter((n) => n.type === 'blob').map((n) => n.path);
+  } catch (e) {
+    console.warn(`  （拿不到远端文件树，跳过删除检查：${e.message}）`);
+    return;
+  }
+  for (const p of remotePaths.filter((x) => !localPaths.has(x)).sort()) {
+    try {
+      const cur = await glab(`/repos/${REPO}/contents/${p}?ref=${BRANCH}`);
+      await glab(`/repos/${REPO}/contents/${p}`, {
+        method: 'DELETE',
+        body: { message: `chore: 删除 ${p}（本地已移除）`, sha: cur.sha, branch: BRANCH },
+      });
+      console.log(`  ✗ ${p}（本地已删除，从远端移除）`);
+    } catch (e) {
+      console.warn(`  ! 删不掉 ${p}: ${e.message}`);
+    }
+  }
 }
 
 /**
@@ -194,6 +216,24 @@ async function syncAtomic() {
     entries.push({ path, mode: '100644', type: 'blob', sha: blob.sha });
     console.log(`  ↑ ${path}`);
     changed++;
+  }
+
+  // 3b. 删掉远端有、本地已经没有的文件。
+  //
+  // Trees API 的 base_tree 是「继承」，entries 里没写到的路径会原样留在新树里 ——
+  // 也就是说 `git rm` 一个文件之后，远端那份**永远删不掉**。
+  // v0.9.16 就是这么出的事：本地删掉了 src/affinity.js 和 src/daemon.js，
+  // 远端 commit 里它们还在；CI 检出该 commit 后 `files: ["src"]` 又把这两个
+  // 陈旧的死代码打进 npm 包（包 65 KB 时里面还躺着 40 KB 的已删模块）。
+  // 所以这里按「本地入库文件清单」对照远端树，把多出来的 blob 用 sha:null 移除。
+  const localPaths = new Set(Object.keys(FILES).filter((p) => FILES[p] !== null));
+  const stale = [...remoteBlobs.keys()].filter((p) => !localPaths.has(p)).sort();
+  if (stale.length > 0) {
+    for (const p of stale) entries.push({ path: p, mode: '100644', type: 'blob', sha: null });
+    changed += stale.length;
+    for (const p of stale) console.log(`  ✗ ${p}（本地已删除，从远端移除）`);
+  } else {
+    console.log('  远端没有多余文件。');
   }
 
   if (changed === 0) {
