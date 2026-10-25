@@ -92,14 +92,14 @@ check(!existsSync(join(ROOT, 'lib', 'client.js')), '已删除的 lib/client.js �
 
 // ── 5. 包体量合理（防止老文件又被带进去）────────────────────────────
 const srcBytes = srcModules.reduce((n, f) => n + statSync(join(srcDir, f)).size, 0);
-const personae = ['persona.md', 'persona-v2-live.md', 'persona-v3-naughty.md', 'persona-v4-daughter.md'];
+const personae = ['persona.md', 'persona-v2-live.md', 'persona-v3-naughty.md'];
 const personaBytes = personae.reduce(
   (n, f) => n + (existsSync(join(srcDir, f)) ? statSync(join(srcDir, f)).size : 0),
   0,
 );
 check(srcBytes < 120_000, `src/ 下代码总量 ${srcBytes} 字节 < 120 KB（含没删干净的残留就会超）`);
 check(srcModules.length === 4, `src/ 下 .js 恰好 4 个（index / memory / presets / history-window），实际 ${srcModules.length}`);
-check(personaBytes > 30_000, `四份人设合计 ${personaBytes} 字节（人设没被误删）`);
+check(personaBytes > 22_000, `三份人设合计 ${personaBytes} 字节（人设没被误删）`);
 
 // ── 6. git 索引里不许有临时文件 ──────────────────────────────────────
 try {

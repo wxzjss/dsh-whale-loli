@@ -1,10 +1,11 @@
 // 生成 dsh-whale-loli/cordis.patch.yml。
 //
-// 本 bundle 提供四个互不干扰的 Agent 预设，各自带一份独立记忆文件：
+// 本 bundle 提供三个互不干扰的 Agent 预设，各自带一份独立记忆文件：
 //   · 鲸鱼娘Agent预设        —— persona.md              → whale-loli.md
 //   · 鲸鱼娘活人版Agent预设  —— persona-v2-live.md      → whale-loli-v2-live.md
 //   · 鲸鱼娘涩涩版Agent预设  —— persona-v3-naughty.md   → whale-loli-v3-naughty.md
-//   · 鲸鱼娘女儿版Agent预设  —— persona-v4-daughter.md  → dsh-whale-daughter.md
+//
+// （女儿版 persona-v4-daughter.md / dsh-whale-daughter.md 已于 0.9.18 移除。）
 //
 // 「不串」靠三层隔离（缺一即串）：
 //   1) 记忆文件名不同（whale-memory 的 config.file）
@@ -31,7 +32,6 @@ function block(text, spaces = 16) {
 const persona = readFileSync(root + 'src/persona.md', 'utf8');
 const personaV2 = readFileSync(root + 'src/persona-v2-live.md', 'utf8');
 const personaV3 = readFileSync(root + 'src/persona-v3-naughty.md', 'utf8');
-const personaV4 = readFileSync(root + 'src/persona-v4-daughter.md', 'utf8');
 
 /**
  * 每个预设共用的工具面行（含参数化记忆行）。
@@ -186,32 +186,13 @@ ${block(personaV3)}
               complete: true
               includeRuntimeContext: false
 ${toolRows({ memoryFile: 'whale-loli-v3-naughty.md', memoryVariable: 'whale_memory_v3', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
-    # ── 预设四：鲸鱼娘女儿版Agent预设 ────────────────────────────────────
-    - id: preset-鲸鱼娘女儿版Agent预设
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: 鲸鱼娘女儿版Agent预设
-        name: 鲸鱼娘女儿版Agent预设
-        description: 女儿版小鱼：称呼「爸爸」，性格天真活泼可爱（好奇心重、黏人、没心机），并改用独立记忆文件 dsh-whale-daughter.md，与原版、活人版、涩涩版记忆互不相通。
-        order: 8
-        plugins:
-          # 人设：女儿版
-          - id: persona
-            name: '@deepseek-ai/dsh-persona'
-            config:
-              prefix: |-
-${block(personaV4)}
-              complete: true
-              includeRuntimeContext: false
-${toolRows({ memoryFile: 'dsh-whale-daughter.md', memoryVariable: 'whale_memory_v4', memoryMax: 16000, memoryTurns: 80, memoryDetail: 5 })}
 `;
 
 writeFileSync(root + 'cordis.patch.yml', yml, 'utf8');
 console.log(
-  'wrote cordis.patch.yml, chars=%d, personaA lines=%d, personaB lines=%d, personaC lines=%d, personaD lines=%d',
+  'wrote cordis.patch.yml, chars=%d, personaA lines=%d, personaB lines=%d, personaC lines=%d',
   yml.length,
   persona.split('\n').length,
   personaV2.split('\n').length,
   personaV3.split('\n').length,
-  personaV4.split('\n').length,
 );

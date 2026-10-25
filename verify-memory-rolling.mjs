@@ -112,12 +112,12 @@ console.log('\n=== 5. appendRolling 递增编号 + 溢出归档 ===');
   check('归档索引指向正确路径', after.archive[0].includes('archive/whale-loli/2026-10-19.md'));
 }
 
-console.log('\n=== 6. 归档按预设分目录（四个互不覆盖） ===');
+console.log('\n=== 6. 归档按预设分目录（三个互不覆盖） ===');
 {
-  const FILES = ['whale-loli.md', 'whale-loli-v2-live.md', 'whale-loli-v3-naughty.md', 'dsh-whale-daughter.md'];
-  const STEMS = ['whale-loli', 'whale-loli-v2-live', 'whale-loli-v3-naughty', 'dsh-whale-daughter'];
+  const FILES = ['whale-loli.md', 'whale-loli-v2-live.md', 'whale-loli-v3-naughty.md'];
+  const STEMS = ['whale-loli', 'whale-loli-v2-live', 'whale-loli-v3-naughty'];
   const dirs = FILES.map((f) => mod.archiveDir(f));
-  check('四个归档目录互不相同', new Set(dirs).size === FILES.length);
+  check('三个归档目录互不相同', new Set(dirs).size === FILES.length);
   check(
     '目录名带各自 stem',
     dirs.every((d, i) => d.endsWith(STEMS[i])),

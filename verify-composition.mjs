@@ -89,7 +89,6 @@ const EXPECTED_PRESETS = [
   '鲸鱼娘Agent预设',
   '鲸鱼娘活人版Agent预设',
   '鲸鱼娘涩涩版Agent预设',
-  '鲸鱼娘女儿版Agent预设',
 ];
 const missing = EXPECTED_PRESETS.filter((id) => !byId.has(id));
 const both =
@@ -99,7 +98,7 @@ const both =
   memTools.size === EXPECTED_PRESETS.length &&
   dupes.length === 0;
 
-console.log('\n四个预设都在:', missing.length === 0, missing.length ? '缺少 ' + missing.join('、') : '');
+console.log('\n三个预设都在:', missing.length === 0, missing.length ? '缺少 ' + missing.join('、') : '');
 console.log('记忆文件数:', memFiles.size, '|', [...memFiles].join(', '));
 console.log('变量名数  :', memVars.size, '|', [...memVars].join(', '));
 console.log('写入工具数:', memTools.size, '|', [...memTools].join(', '));

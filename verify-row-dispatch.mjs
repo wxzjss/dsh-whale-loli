@@ -8,7 +8,7 @@
 //   这个脚本是那条教训的守门人：逐行跑**真的** `applyEntry`，看它到底注册了什么。
 //
 // 0.9.16 起好感度整套删除，patch 里只剩记忆行（`row: memory`）一种；
-// 断言改为：记忆行 4 条、每条都注册自己那一个变量与工具、且一条不多。
+// 断言改为：记忆行 3 条、每条都注册自己那一个变量与工具、且一条不多。
 //
 // 用法：node verify-row-dispatch.mjs [cordis.patch.yml]
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -120,7 +120,7 @@ const presetsMod = await import(pathToFileURL(join(process.cwd(), 'src/presets.j
 // ══════════════════════════════════════════════════════════════════════════
 console.log('\n[1] 行数与形状');
 const memoryRows = ours.filter((r) => r.config?.row === 'memory');
-check('记忆行 4 条', memoryRows.length === 4, `实际 ${memoryRows.length}`);
+check('记忆行 3 条', memoryRows.length === 3, `实际 ${memoryRows.length}`);
 check('没有残留的好感度行（row: affinity）', ours.every((r) => r.config?.row !== 'affinity'));
 check('没有残留的守护进程行（daemon: true）', ours.every((r) => r.config?.daemon !== true));
 check(

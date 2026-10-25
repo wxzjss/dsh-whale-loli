@@ -18,7 +18,7 @@ const win = await import('./src/history-window.js');
 check('index.js 默认导出有 name/apply', typeof idx.default?.name === 'string' && typeof idx.default?.apply === 'function');
 check('history-window 默认导出有 name/apply', typeof win.default?.name === 'string' && typeof win.default?.apply === 'function');
 check('history-window 必须 inject compaction（否则读服务非法）', JSON.stringify(win.default?.inject) === '["compaction"]');
-check('PRESETS = 4', idx.PRESETS.length === 4);
+check('PRESETS = 3', idx.PRESETS.length === 3);
 
 console.log('\n=== 2. patch 里每个插件行都能被解析到真实模块 ===');
 // 提取所有 name: '...' 并区分内置包与本地包

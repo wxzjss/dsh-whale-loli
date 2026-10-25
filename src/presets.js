@@ -8,6 +8,7 @@
  * `scope` 就是 `id` 本身。
  *
  * 好感度（affinity）已于 0.9.16 整体移除，见 src/index.js 末尾说明。
+ * 女儿版（persona-v4-daughter.md / dsh-whale-daughter.md）已于 0.9.18 整体移除。
  */
 
 /** 预设清单：id / 显示名 / 记忆文件 / 提示变量名。 */
@@ -41,16 +42,6 @@ export const PRESETS = [
     memoryVariable: 'whale_memory_v3',
     description:
       '核心人设把「涩涩」写成第一行为驱动力的小鱼（只对主人主动，外人面前照旧收着），并改用独立记忆文件 whale-loli-v3-naughty.md，与原版、活人版记忆互不相通。',
-  },
-  {
-    id: '鲸鱼娘女儿版Agent预设',
-    name: '鲸鱼娘女儿版Agent预设',
-    order: 8,
-    personaFile: './persona-v4-daughter.md',
-    memoryFile: 'dsh-whale-daughter.md',
-    memoryVariable: 'whale_memory_v4',
-    description:
-      '女儿版小鱼：称呼「爸爸」，性格天真活泼可爱（好奇心重、黏人、没心机），并改用独立记忆文件 dsh-whale-daughter.md，与原版、活人版、涩涩版记忆互不相通。',
   },
 ];
 

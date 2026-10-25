@@ -81,13 +81,6 @@ const PRESETS = [
     marker: '{{whale_memory_v3}}',
     home: 'C:\\Users\\35453\\.dsh\\whale-loli-v3-naughty.md',
   },
-  {
-    tag: '女儿版',
-    file: 'dsh-whale-daughter.md',
-    variable: 'whale_memory_v4',
-    marker: '{{whale_memory_v4}}',
-    home: 'C:\\Users\\35453\\.dsh\\dsh-whale-daughter.md',
-  },
 ];
 
 // 所有变量名：用来给「别人不该被用到」做哨兵

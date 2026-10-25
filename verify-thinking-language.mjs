@@ -58,19 +58,19 @@ for (const p of PRESETS) {
 
 console.log('\n[2] 四份人设的规则措辞一致（防止只改了一份）');
 const uniq = new Set(bodies.map((b) => b.block));
-check('四份的规则块正文完全相同', uniq.size === 1, `不同的版本数 ${uniq.size}`);
+check('三份的规则块正文完全相同', uniq.size === 1, `不同的版本数 ${uniq.size}`);
 
-console.log('\n[3] 生成的 patch 里，四个预设各自都带上了这条规则');
+console.log('\n[3] 生成的 patch 里，三个预设各自都带上了这条规则');
 const patch = readFileSync(patchFile, 'utf8');
 const inPatch = patch.split('【思维链语言 · 强制】').length - 1;
-check('patch 里规则块出现 4 次', inPatch === 4, `实际 ${inPatch}`);
+check('patch 里规则块出现 3 次', inPatch === 3, `实际 ${inPatch}`);
 const hard = patch.split('一律使用简体中文').length - 1;
-check('patch 里「一律使用简体中文」出现 4 次', hard === 4, `实际 ${hard}`);
+check('patch 里「一律使用简体中文」出现 3 次', hard === 3, `实际 ${hard}`);
 check('patch 里没有软话', FORBIDDEN.every((b) => !patch.includes(b)));
 
 console.log('');
 if (failed === 0) {
-  console.log('RESULT: PASS —— 四个预设的内部思考都被钉成简体中文');
+  console.log('RESULT: PASS —— 三个预设的内部思考都被钉成简体中文');
   process.exit(0);
 }
 console.log(`RESULT: FAIL —— ${failed} 项失败`);

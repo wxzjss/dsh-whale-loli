@@ -1,6 +1,6 @@
 // 用 DSH 自己的 loadOverlayPatches + composeEntries 校验插件 patch，
 // 这是宿主真正的接受路径（而不是自己复刻一份校验逻辑）。
-// 四个预设都要过，并确认记忆行（文件 / 变量 / 写入工具）没有串。
+// 三个预设都要过，并确认记忆行（文件 / 变量 / 写入工具）没有串。
 // 本机没有可读的 dsh-app-boot（例如 CI / Desktop 的 app.asar）时优雅跳过。
 import { pathToFileURL } from 'node:url';
 import { requireHostPackage } from './lib/dsh-root.mjs';
@@ -57,13 +57,6 @@ const WANT = [
     file: 'whale-loli-v3-naughty.md',
     variable: 'whale_memory_v3',
     tool: 'whale_memory_v3_add',
-    turns: 80,
-  },
-  {
-    id: '鲸鱼娘女儿版Agent预设',
-    file: 'dsh-whale-daughter.md',
-    variable: 'whale_memory_v4',
-    tool: 'whale_memory_v4_add',
     turns: 80,
   },
 ];

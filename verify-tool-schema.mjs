@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 用**宿主自己的** JSON-Schema 校验器检查四个写入工具的 schema。
+ * 用**宿主自己的** JSON-Schema 校验器检查三个写入工具的 schema。
  *
  * 为什么需要这个脚本：
  *   曾经把 `{ type: 'string', required: true }` 写在单个属性上（想表达"这个字段
@@ -39,7 +39,6 @@ const TOOLS = [
   { tool: 'whale_memory_add', variable: 'whale_memory', file: 'whale-loli.md' },
   { tool: 'whale_memory_v2_add', variable: 'whale_memory_v2', file: 'whale-loli-v2-live.md' },
   { tool: 'whale_memory_v3_add', variable: 'whale_memory_v3', file: 'whale-loli-v3-naughty.md' },
-  { tool: 'whale_memory_v4_add', variable: 'whale_memory_v4', file: 'dsh-whale-daughter.md' },
 ];
 
 const built = new Map();
@@ -62,7 +61,7 @@ for (const t of TOOLS) {
   apply(ctx, { file: t.file, variableName: t.variable, toolName: t.tool, turnLimit: 80, detailLimit: 5 });
 }
 
-console.log('=== 1. 四条工具的 schema 都通过宿主校验器 ===');
+console.log('=== 1. 三条工具的 schema 都通过宿主校验器 ===');
 for (const t of TOOLS) {
   const tool = built.get(t.tool);
   assert(!!tool, `${t.tool} 注册出来了`);
@@ -114,5 +113,5 @@ for (const t of TOOLS) {
 }
 
 rmSync(home, { recursive: true, force: true });
-console.log('\nRESULT:', process.exitCode ? 'FAIL' : 'PASS —— 四个工具的 schema 都被宿主接受');
+console.log('\nRESULT:', process.exitCode ? 'FAIL' : 'PASS —— 三个工具的 schema 都被宿主接受');
 process.exit(process.exitCode ?? 0);

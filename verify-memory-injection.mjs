@@ -9,9 +9,9 @@ function assert(cond, label) {
 
 const patch = readFileSync('cordis.patch.yml', 'utf8');
 
-console.log('=== 1. patch 里四条记忆行都用 variableName，不再是 sectionName ===');
+console.log('=== 1. patch 里三条记忆行都用 variableName，不再是 sectionName ===');
 const rows = [...patch.matchAll(/file: (\S+)\n\s+variableName: (\S+)\n\s+toolName: (\S+)\n\s+maxChars: (\d+)\n\s+turnLimit: (\d+)\n\s+detailLimit: (\d+)/g)];
-assert(rows.length === 4, `记忆行 = 4（实际 ${rows.length}）`);
+assert(rows.length === 3, `记忆行 = 3（实际 ${rows.length}）`);
 for (const r of rows) console.log(`     ${r[1]} -> {{${r[2]}}} tool=${r[3]} maxChars=${r[4]} turn=${r[5]} detail=${r[6]}`);
 
 console.log('\n=== 2. 每条人设都引用了自己的变量，且只引用自己的 ===');
@@ -19,7 +19,6 @@ const want = {
   'whale-loli.md': 'whale_memory',
   'whale-loli-v2-live.md': 'whale_memory_v2',
   'whale-loli-v3-naughty.md': 'whale_memory_v3',
-  'dsh-whale-daughter.md': 'whale_memory_v4',
 };
 const allVars = Object.values(want);
 for (const r of rows) {
@@ -30,7 +29,7 @@ for (const r of rows) {
   assert(patch.includes(`{{${v}}}`), `${v} 被引用`);
   assert(mine.every((x) => x.startsWith('whale_memory')), `${v} 与其他变量同名可区分`);
 }
-assert(new Set(allVars).size === 4, '四个变量名互不相同');
+assert(new Set(allVars).size === 3, '三个变量名互不相同');
 assert(!/sectionName:/.test(patch), 'patch 里不再出现 sectionName');
 
 console.log('\n=== 3. 复刻宿主 assemble/renderPrompt 语义 ===');

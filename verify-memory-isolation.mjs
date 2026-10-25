@@ -1,5 +1,5 @@
-// 端到端隔离证明：给四个预设各挂一次 whale-memory（**变量通道**），
-// 断言四条记忆各自只读到自己的文件，绝不串。
+// 端到端隔离证明：给三个预设各挂一次 whale-memory（**变量通道**），
+// 断言三条记忆各自只读到自己的文件，绝不串。
 //
 // 为什么是变量：persona 是 complete:true，宿主 assemble() 会把最终提示替换成
 // 只剩那一个 section，独立注册的 section 永远进不去（见 src/memory.js 顶部注释）。
@@ -12,7 +12,7 @@ process.env.DSH_HOME = home;
 
 const mod = await import('./src/memory.js');
 
-// 与 patch 里四条记忆行的 config 完全一致
+// 与 patch 里三条记忆行的 config 完全一致
 const CASES = [
   { file: 'whale-loli.md', variableName: 'whale_memory', body: '普通版：主人爱喝冰美式。', tag: '普通版' },
   { file: 'whale-loli-v2-live.md', variableName: 'whale_memory_v2', body: '活人版：主人怕黑。', tag: '活人版' },
@@ -21,12 +21,6 @@ const CASES = [
     variableName: 'whale_memory_v3',
     body: '涩涩版：主人喜欢被主动黏。',
     tag: '涩涩版',
-  },
-  {
-    file: 'dsh-whale-daughter.md',
-    variableName: 'whale_memory_v4',
-    body: '女儿版：爸爸答应带我去看海。',
-    tag: '女儿版',
   },
 ];
 
@@ -92,15 +86,15 @@ const check = (label, cond) => {
 };
 
 console.log('\n断言：');
-check('四个变量名互不相同', new Set(names).size === CASES.length);
+check('三个变量名互不相同', new Set(names).size === CASES.length);
 check('变量名都合法（[a-z][a-z0-9_]*）', names.every((n) => /^[a-z][a-z0-9_]*$/.test(n)));
 check('每个 scope 只注册 1 个变量', scopes.every((s) => s.vars.size === 1));
 
 // 写入工具：也是每 scope 一个，名字互不相同，且认自己的文件
 const toolNames = scopes.map((s) => [...s.tools.keys()][0]);
 console.log('写入工具 =', toolNames.join(' | '));
-check('四个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
-check('四个写入工具名互不相同', new Set(toolNames).size === CASES.length);
+check('三个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
+check('三个写入工具名互不相同', new Set(toolNames).size === CASES.length);
 check(
   '工具名 = <变量名>_add 且一一对应',
   toolNames.every((n, i) => n === `${names[i]}_add`),
@@ -166,5 +160,5 @@ check(
 );
 
 rmSync(home, { recursive: true, force: true });
-console.log('\nRESULT:', ok ? 'PASS —— 四个记忆完全隔离（变量通道）' : 'FAIL');
+console.log('\nRESULT:', ok ? 'PASS —— 三个记忆完全隔离（变量通道）' : 'FAIL');
 process.exit(ok ? 0 : 1);

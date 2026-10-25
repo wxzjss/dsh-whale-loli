@@ -1,15 +1,14 @@
 /**
- * dsh-whale-loli — 鲸鱼娘 Agent 预设（四个）
+ * dsh-whale-loli — 鲸鱼娘 Agent 预设（三个）
  *
- * 本包提供四个互不干扰的预设，各自带一份独立记忆文件：
+ * 本包提供三个互不干扰的预设，各自带一份独立记忆文件：
  *
  *   · 鲸鱼娘Agent预设        persona.md              → <DSH_HOME>/whale-loli.md
  *   · 鲸鱼娘活人版Agent预设  persona-v2-live.md      → <DSH_HOME>/whale-loli-v2-live.md
  *   · 鲸鱼娘涩涩版Agent预设  persona-v3-naughty.md   → <DSH_HOME>/whale-loli-v3-naughty.md
- *   · 鲸鱼娘女儿版Agent预设  persona-v4-daughter.md  → <DSH_HOME>/dsh-whale-daughter.md
  *
  * 全靠 `cordis.patch.yml` 完成：
- *   1. 四条 `@deepseek-ai/dsh-agent-preset` 声明 —— 各自的 config 就是一个预设本体
+ *   1. 三条 `@deepseek-ai/dsh-agent-preset` 声明 —— 各自的 config 就是一个预设本体
  *      （id / name / description / order / plugins），被 `agentPresets.register()`
  *      注册后即出现在 Agent 预设界面。
  *   2. 每个预设里一条 `dsh-whale-loli` 行 —— 挂载本包 src/memory.js 的 whale-memory，
@@ -18,6 +17,7 @@
  * 记忆不串靠三层隔离：文件名不同、变量名不同、写入工具名不同 + 预设 scope 不同。
  *
  * 好感度（affinity）已于 0.9.16 整体移除，见文件末尾的说明。
+ * 女儿版预设已于 0.9.18 整体移除。
  *
  * 本文件同时导出预设元信息与人设正文，供构建 / 校验脚本复用。
  */
@@ -43,9 +43,6 @@ export const PRESET_ID_V2 = PRESETS[1].id;
 /** 涩涩版预设 id。 */
 export const PRESET_ID_V3 = PRESETS[2].id;
 
-/** 女儿版预设 id。 */
-export const PRESET_ID_V4 = PRESETS[3].id;
-
 /** 原版预设说明。 */
 export const PRESET_DESCRIPTION = PRESETS[0].description;
 
@@ -55,9 +52,6 @@ export const PRESET_DESCRIPTION_V2 = PRESETS[1].description;
 /** 涩涩版预设说明。 */
 export const PRESET_DESCRIPTION_V3 = PRESETS[2].description;
 
-/** 女儿版预设说明。 */
-export const PRESET_DESCRIPTION_V4 = PRESETS[3].description;
-
 /** 原版人设正文（persona.md）。 */
 export const personaText = read('./persona.md');
 
@@ -66,9 +60,6 @@ export const personaTextV2 = read('./persona-v2-live.md');
 
 /** 涩涩版人设正文（persona-v3-naughty.md）。 */
 export const personaTextV3 = read('./persona-v3-naughty.md');
-
-/** 女儿版人设正文（persona-v4-daughter.md）。 */
-export const personaTextV4 = read('./persona-v4-daughter.md');
 
 /** 按预设 id 取人设正文 —— 校验脚本用它避免复制粘贴式三元表达式。 */
 export function personaTextOf(presetId) {
