@@ -7,7 +7,8 @@ function assert(cond, label) {
   if (!cond) process.exitCode = 1;
 }
 
-const patch = readFileSync('cordis.patch.yml', 'utf8');
+// 统一换成 LF 再匹配：Windows 上检出的是 CRLF，`(\S+)\n` 会被行尾的 \r 卡住，匹配数变 0。
+const patch = readFileSync('cordis.patch.yml', 'utf8').replace(/\r\n?/g, '\n');
 
 console.log('=== 1. patch 里三条记忆行都用 variableName，不再是 sectionName ===');
 const rows = [...patch.matchAll(/file: (\S+)\n\s+variableName: (\S+)\n\s+toolName: (\S+)\n\s+maxChars: (\d+)\n\s+turnLimit: (\d+)\n\s+detailLimit: (\d+)/g)];

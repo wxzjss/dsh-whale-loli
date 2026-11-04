@@ -93,7 +93,14 @@ check('每个 scope 只注册 1 个变量', scopes.every((s) => s.vars.size === 
 // 写入工具：也是每 scope 一个，名字互不相同，且认自己的文件
 const toolNames = scopes.map((s) => [...s.tools.keys()][0]);
 console.log('写入工具 =', toolNames.join(' | '));
-check('三个 scope 都注册了写入工具', scopes.every((s) => s.tools.size === 1));
+check(
+  '三个 scope 都注册了写入工具',
+  scopes.every((s, i) => s.tools.has(`${names[i]}_add`)),
+);
+check(
+  '三个 scope 都注册了固定记忆工具',
+  scopes.every((s, i) => s.tools.has(`${names[i]}_fixed`)),
+);
 check('三个写入工具名互不相同', new Set(toolNames).size === CASES.length);
 check(
   '工具名 = <变量名>_add 且一一对应',

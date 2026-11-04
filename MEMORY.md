@@ -2,13 +2,14 @@
 
 三个预设各有一份独立记忆文件，格式**完全相同**，规则也相同：
 
-| 预设 | 记忆文件 | 提示变量名 | 写入工具名 | 归档目录 |
-| --- | --- | --- | --- | --- |
-| 鲸鱼娘Agent预设 | `<DSH_HOME>/whale-loli.md` | `whale_memory` | `whale_memory_add` | `archive/whale-loli/` |
-| 鲸鱼娘活人版Agent预设 | `<DSH_HOME>/whale-loli-v2-live.md` | `whale_memory_v2` | `whale_memory_v2_add` | `archive/whale-loli-v2-live/` |
-| 鲸鱼娘涩涩版Agent预设 | `<DSH_HOME>/whale-loli-v3-naughty.md` | `whale_memory_v3` | `whale_memory_v3_add` | `archive/whale-loli-v3-naughty/` |
+| 预设 | 记忆文件 | 提示变量名 | 滚动摘要工具 | 固定记忆工具 | 归档目录 |
+| --- | --- | --- | --- | --- | --- |
+| 鲸鱼娘Agent预设 | `<DSH_HOME>/whale-loli.md` | `whale_memory` | `whale_memory_add` | `whale_memory_fixed` | `archive/whale-loli/` |
+| 鲸鱼娘活人版Agent预设 | `<DSH_HOME>/whale-loli-v2-live.md` | `whale_memory_v2` | `whale_memory_v2_add` | `whale_memory_v2_fixed` | `archive/whale-loli-v2-live/` |
+| 鲸鱼娘涩涩版Agent预设 | `<DSH_HOME>/whale-loli-v3-naughty.md` | `whale_memory_v3` | `whale_memory_v3_add` | `whale_memory_v3_fixed` | `archive/whale-loli-v3-naughty/` |
 
-**读写是对称的两条通道**：`variable` 负责每轮把内容塞进系统提示（读），`tools` 负责让她自己往滚动摘要里添（写）。
+**读写是对称的两条通道**：`variable` 负责每轮把内容塞进系统提示（读），`tools` 负责让她自己写（写）——
+`<名称>_add` 追加滚动摘要，`<名称>_fixed` 改固定记忆的某个小节。
 两条都必须存在 —— 只读的话，人设写着「每轮都要记」，她手里却没有笔。
 
 ## 文件结构
@@ -82,15 +83,18 @@
 ## 填写规则（人设里也写了同一套）
 
 1. **每一轮都要往「滚动摘要」加一条**，不是挑着记。
-2. **用工具写，不要手动编辑文件**：调 `whale_memory_add`（活人版 `whale_memory_v2_add`、涩涩版 `whale_memory_v3_add`），
-   只传 `summary` 一句话。编号、`(N/80)` 计数、超限归档全部由工具负责。
+2. **用工具写，不要手动编辑文件**：
+   滚动摘要调 `whale_memory_add`（活人版 `whale_memory_v2_add`、涩涩版 `whale_memory_v3_add`），只传 `summary` 一句话 —— 编号、`(N/80)` 计数、超限归档全部由工具负责；
+   固定记忆调 `whale_memory_fixed`（活人版 `whale_memory_v2_fixed`、涩涩版 `whale_memory_v3_fixed`），传 `section` + `content`。
 3. 短对话直接照实记；**长对话先精简概括再记**，压成一两句说清「聊了什么、结论是什么」。
 4. 一条 6~60 字，写「发生了什么 + 情绪/结论」，别复述全文。
 5. 写到第 81 条时，最旧那条自动滚出去 —— 归档到 `archive/<预设名>/YYYY-MM-DD.md`，`# 归档索引` 里留一行。
-6. **固定记忆不算在 80 条里**：值得长期留的另写进 `# 固定记忆` 对应小节（这一步才需要动手编辑文件），并定期合并去重。
+6. **固定记忆不算在 80 条里**：值得长期留的用 `<名称>_fixed` 写进对应小节，并定期合并去重。
 7. 滚动条目以后还用得上，就总结一句挪进 `# 固定记忆`；否则到点会滚出去。
 
 ## 写入工具
+
+### 滚动摘要：`<名称>_add`
 
 `ctx.tools.register()` 注册，参数只有一个 `summary`：
 
@@ -106,8 +110,26 @@
 - `archived > 0` 表示这次写入挤掉了旧条目，已落到 `archive/<预设名>/YYYY-MM-DD.md`。
 - 空 `summary` 直接抛错，不会写进半条空记录。
 
+### 固定记忆：`<名称>_fixed`
+
+参数三个，`mode` 可省略：
+
+```json
+{ "section": "待办", "content": "- 把 issue 发给官方", "mode": "append" }
+```
+
+返回 `{ path, section, mode, chars }`。
+
+- `section` 只接受 8 个固定小节名：任务目标 / 用户约束·偏好 / 当前状态 / 待办 / 关键决策 / 关键事实（已验证）/ 文件·路径·命令 / 错误与修复。
+  带不带 `## ` 前缀都行；不在这 8 个里直接抛错，不会顺手新建一个野小节。
+- `mode` **默认 `append`**：把 `content` 追加到该小节已有内容之后，多行用 `\n` 分隔。
+  只有显式传 `mode: "replace"` 才整段替换 —— 默认不覆盖是刻意的，固定记忆写丢就找不回来。
+- 写到哪个小节就在哪个小节里动手，**不碰**其它小节，也不碰滚动摘要 / 最近详细区 / 归档索引。
+- 小节在文件里还不存在时，按 8 个小节的固定顺序插到正确位置。
+- 空 `content`、未知 `section` 都直接抛错。
+
 三份记忆的写工具名字互不相同，所以即使三个预设同时活跃也不会互相污染 —— 
-`verify-memory-isolation.mjs` 会让每个工具各写一笔，断言只有自己的文件变了。
+`verify-memory-isolation.mjs` 会让两套工具各写一笔，断言只有自己的文件变了。
 
 ## 每轮先看什么
 
