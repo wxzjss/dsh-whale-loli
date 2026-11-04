@@ -516,6 +516,108 @@ export function pruneMemoryFile(file = DEFAULT_MEMORY_FILE, turnLimit = DEFAULT_
   return { path: p, before: roll.length, after: keptRoll.length, archived: overflow.length };
 }
 
+/**
+ * 把固定记忆区的某一个小节改写掉。
+ *
+ * 为什么需要它：固定记忆区（`## 任务目标` … `## 错误与修复`）此前没有任何写入口，
+ * agent 只能拿 edit/write 去改 ~/.dsh 下的文件，而那是工作区外 —— 宿主沙箱直接拒。
+ * 插件自己在宿主进程里用 node:fs 写，不经沙箱，所以把能力做成工具就解决了。
+ *
+ * @param {string} file     记忆文件名（同 appendRolling）
+ * @param {string} section  小节名，可带或不带 `## `（如 `待办` / `## 待办`）
+ * @param {string} content  要写入的内容；mode=append 时按行追加
+ * @param {object} options  `{ mode: 'replace'|'append', turnLimit, detailLimit }`
+ * @returns `{ path, section, mode, chars }`
+ */
+export function setFixedSection(file = DEFAULT_MEMORY_FILE, section, content, options = {}) {
+  const title = normalizeFixedSection(section);
+  if (!title) {
+    throw new Error(
+      `未知固定记忆小节：${String(section)}（可用：${FIXED_SECTIONS.map((t) => t.replace(/^##\s*/, '')).join(' / ')}）`,
+    );
+  }
+  // 默认 append：防止手滑整节覆盖；要替换必须显式传 mode: 'replace'
+  const mode = options.mode === 'replace' ? 'replace' : 'append';
+  const text = String(content ?? '').trim();
+  if (!text) throw new Error('content 不能为空');
+
+  const turnLimit = typeof options.turnLimit === 'number' ? options.turnLimit : DEFAULT_TURN_LIMIT;
+  const detailLimit = typeof options.detailLimit === 'number' ? options.detailLimit : DEFAULT_DETAIL_LIMIT;
+  const p = memoryPath(file);
+  ensureMemoryFile(file, turnLimit);
+
+  const { fixed, roll, detail, archive } = parseMemory(readFileSync(p, 'utf8'));
+  const nextFixed = patchFixedText(fixed, title, text, mode);
+
+  writeFileSync(
+    p,
+    renderMemory(file, { fixed: nextFixed, roll, detail, archive, turnLimit, detailLimit }),
+    'utf8',
+  );
+  return { path: p, section: title, mode, chars: nextFixed.length };
+}
+
+/** `待办` / `## 待办` → `## 待办`；不在白名单里返回 null。 */
+function normalizeFixedSection(section) {
+  const raw = String(section ?? '').trim();
+  if (!raw) return null;
+  const withHash = raw.startsWith('##') ? raw : `## ${raw}`;
+  const wanted = withHash.replace(/\s+/g, ' ').trim();
+  return FIXED_SECTIONS.find((t) => t.replace(/\s+/g, ' ').trim() === wanted) ?? null;
+}
+
+/** 在固定区文本里替换/追加一个小节，其余小节原样保留。 */
+function patchFixedText(fixedText, title, content, mode) {
+  const lines = String(fixedText ?? '').split('\n');
+  const headIdx = lines.findIndex((l) => l.trim() === title);
+
+  let bodyStart = -1;
+  let bodyEnd = -1;
+  if (headIdx !== -1) {
+    bodyStart = headIdx + 1;
+    bodyEnd = lines.length;
+    for (let i = bodyStart; i < lines.length; i += 1) {
+      // 遇到下一个标题就停：`## 小节` 或 `# 滚动摘要` / `# 最近详细区` 这类一级标题都算
+      if (/^#{1,2}\s+/.test(lines[i])) {
+        bodyEnd = i;
+        break;
+      }
+    }
+  }
+
+  const incoming = content
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((l) => l.trim() !== '');
+
+  if (headIdx === -1) {
+    // 新小节：按 FIXED_SECTIONS 的顺序插到合适位置
+    const order = FIXED_SECTIONS.indexOf(title);
+    let insertAt = lines.length;
+    for (let i = 0; i < lines.length; i += 1) {
+      const idx = FIXED_SECTIONS.indexOf(lines[i].trim());
+      if (idx > order) {
+        insertAt = i;
+        break;
+      }
+    }
+    return [...lines.slice(0, insertAt), title, '', ...incoming, '', ...lines.slice(insertAt)]
+      .join('\n')
+      .trim();
+  }
+
+  if (mode === 'replace') {
+    return [...lines.slice(0, headIdx), title, '', ...incoming, '', ...lines.slice(bodyEnd)]
+      .join('\n')
+      .trim();
+  }
+
+  const body = lines.slice(bodyStart, bodyEnd).filter((l) => l.trim() !== '');
+  return [...lines.slice(0, headIdx + 1), '', ...body, ...incoming, '', ...lines.slice(bodyEnd)]
+    .join('\n')
+    .trim();
+}
+
 /** 组装注入文本（含横幅），供自检/调试。 */
 export function memorySectionText(
   file = DEFAULT_MEMORY_FILE,
@@ -616,7 +718,7 @@ export function apply(ctx, config = {}) {
           '',
           `用途：平时说的每一轮短对话都记一条，长对话先精简概括再记。`,
           `上限 ${turnLimit} 条，超出会自动归档，所以一条只写一句话，不要复述全文。`,
-          `固定记忆区不在这里写（那部分长期保留，不算在 ${turnLimit} 条以内）。`,
+          `固定记忆区（长期保留、不算在 ${turnLimit} 条以内）用 ${variableName}_fixed 那个工具写；这里只管滚动摘要。`,
           `只能写自己这一份（${file}），别写别的预设的记忆文件。`,
         ].join('\n'),
         parameters: {
@@ -670,6 +772,95 @@ export function apply(ctx, config = {}) {
     console.log(`[whale-memory] registered tool ${toolName} (dispose=${typeof dispose})`);
     return dispose;
   }, `whale-memory.tool(${toolName})`);
+
+  /**
+   * 写固定记忆的工具。
+   *
+   * `add` 只管滚动摘要；固定记忆那 8 个小节此前完全没有入口，agent 想写只能去
+   * edit ~/.dsh 下的文件 —— 那是工作区外，宿主沙箱直接拒。这里补上：写入走本进程的
+   * node:fs，不经沙箱，和 `add` 同一条路。
+   */
+  const fixedToolName =
+    typeof config.fixedToolName === 'string' && config.fixedToolName.trim()
+      ? config.fixedToolName.trim()
+      : `${variableName}_fixed`;
+  ctx.effect(() => {
+    const tools = ctx.tools;
+    if (typeof tools?.register !== 'function') {
+      console.warn(`[whale-memory] 当前作用域没有 tools.register，固定记忆工具 ${fixedToolName} 未注册`);
+      return () => {};
+    }
+    const sectionList = FIXED_SECTIONS.map((t) => t.replace(/^##\s*/, ''));
+    const dispose = tools.register({
+      name: fixedToolName,
+      description: [
+        `改写记忆文件 ${file} 的「固定记忆」区里某一个小节（长期保留，不受 ${turnLimit} 条上限约束）。`,
+        '',
+        `可用小节（${sectionList.length} 个）：${sectionList.join(' / ')}`,
+        '',
+        'mode=append（默认）在原内容后面追加，不动原有内容；mode=replace 要显式指定，会整节覆盖。',
+        '这里写长期事实：任务目标、主人的约束与偏好、当前状态、待办、关键决策、',
+        '已验证的事实、常用路径与命令、踩过的坑与修法。别塞寒暄和一次性细节。',
+        `滚动摘要走另一个工具（${toolName}）。`,
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          section: {
+            type: 'string',
+            description: `小节名，下列之一：${sectionList.join(' / ')}`,
+          },
+          content: {
+            type: 'string',
+            description:
+              '要写入的内容，多行用 \\n 分隔。以「- 」开头的行会原样保留；其它行按原样写入。',
+          },
+          mode: {
+            type: 'string',
+            enum: ['append', 'replace'],
+            description: 'append=追加到该节末尾（默认，不动原有内容）；replace=整节替换（显式指定才生效）',
+          },
+        },
+        required: ['section', 'content'],
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            path: { type: 'string' },
+            section: { type: 'string' },
+            mode: { type: 'string' },
+            chars: { type: 'integer' },
+          },
+          required: ['path', 'section', 'mode', 'chars'],
+        },
+        render: (_args, value) => [
+          {
+            type: 'text',
+            text: `已更新「${value.section}」（${value.mode}，固定记忆共 ${value.chars} 字符）`,
+          },
+        ],
+      },
+      async execute(args) {
+        const section = typeof args?.section === 'string' ? args.section.trim() : '';
+        const content = typeof args?.content === 'string' ? args.content : '';
+        if (!section) throw new Error('section 不能为空');
+        if (!content.trim()) throw new Error('content 不能为空');
+        const mode = args?.mode === 'replace' ? 'replace' : 'append';
+        return setFixedSection(file, section, content, { mode, turnLimit, detailLimit });
+      },
+      presentCall: (args) => ({
+        card: 'generic',
+        title: '写固定记忆',
+        kind: 'other',
+        rawInput: `${args.section}${args.mode === 'append' ? '（追加）' : ''}`,
+      }),
+    });
+    console.log(`[whale-memory] registered tool ${fixedToolName} (dispose=${typeof dispose})`);
+    return dispose;
+  }, `whale-memory.fixedTool(${fixedToolName})`);
 
   /**
    * 每轮结束（agent 转为 idle）时，把超出 turnLimit 的滚动条目**归档并瘦身文件**。

@@ -149,8 +149,10 @@ for (const row of memoryRows) {
     `实际 ${JSON.stringify(varNames)}`,
   );
   check(
-    `[${row.id}] 只注册 1 个工具且就是 ${row.config.toolName}`,
-    toolNames.length === 1 && toolNames[0] === row.config.toolName,
+    `[${row.id}] 注册了 ${row.config.toolName} 与 ${row.config.variableName}_fixed 两个工具`,
+    toolNames.length === 2
+      && toolNames.includes(row.config.toolName)
+      && toolNames.includes(`${row.config.variableName}_fixed`),
     `实际 ${JSON.stringify(toolNames)}`,
   );
   check(

@@ -47,9 +47,12 @@
 | `# 归档索引` | 滚出去的条目归档到 `archive/<预设名>/YYYY-MM-DD.md`，这里记一行索引 | — |
 
 - **每轮都记**：不是挑着记。短对话直接记；长对话**先精简概括**再记（压成一两句说清聊了什么、结论是什么）。
-- **写入由工具完成**：每轮调一次 `<预设>_add`（`whale_memory_add` / `whale_memory_v2_add` / `whale_memory_v3_add` / `whale_memory_v4_add`），只传一句话 `summary`；
-  编号、`(N/80)` 计数、超限归档都由工具做，不用（也不该）手动编辑文件。
-  - 只有改 `# 固定记忆` 那 8 个小节时，才直接编辑文件。
+- **写入由工具完成，两个工具各管一块**：
+  - `<预设>_add`（`whale_memory_add` / `whale_memory_v2_add` / `whale_memory_v3_add` / `whale_memory_v4_add`）写 `# 滚动摘要`：只传一句话 `summary`，编号、`(N/80)` 计数、超限归档都由工具做。
+  - `<预设>_fixed`（`whale_memory_fixed` / `whale_memory_v2_fixed` / `whale_memory_v3_fixed` / `whale_memory_v4_fixed`）写 `# 固定记忆` 的某个小节：传 `section`（8 个小节名之一，带不带 `## ` 都行）、`content`、以及可选的 `mode`。
+    `mode` 默认 **`append`**（把新内容追加到该小节末尾，不会冲掉已有的事实），只有显式传 `replace` 才整段替换 —— 默认不覆盖是刻意的，固定记忆区一旦写丢就找不回来。
+  - 两个工具都**只动自己那一区**：`_add` 不碰固定记忆，`_fixed` 不碰滚动摘要 / 详细区 / 归档索引。
+  - 所以正常情况下**不需要手工编辑记忆文件**；手工编辑只在排查问题时用。
 - **80 条上限只算「滚动摘要」**：`# 固定记忆` 不占这个名额。
 - **想长期留的就往上挪**：某条滚动摘要以后还用得上，就总结一句写进 `# 固定记忆`；否则到点会滚出去（并归档）。
 - 上限有两道保险：注入时只取最近 80 条（文件里堆再多也只进 80 条）；**每轮结束（agent 转 idle）时自动**把文件本身裁到 80 条，超出的写进 `archive/<预设名>/`。
@@ -138,13 +141,14 @@ sections: completeSection === void 0 ? transformed.sections : [completeSection]
 | 记忆文件名 (`config.file`) | `whale-loli.md` | `whale-loli-v2-live.md` | `whale-loli-v3-naughty.md` |
 | 提示变量名 (`config.variableName`) | `whale_memory` | `whale_memory_v2` | `whale_memory_v3` |
 | 写入工具名 (`config.toolName`) | `whale_memory_add` | `whale_memory_v2_add` | `whale_memory_v3_add` |
+| 固定记忆工具名 (`config.fixedToolName`) | `whale_memory_fixed` | `whale_memory_v2_fixed` | `whale_memory_v3_fixed` |
 | 预设 id（决定 scope） | `鲸鱼娘Agent预设` | `鲸鱼娘活人版Agent预设` | `鲸鱼娘涩涩版Agent预设` |
 
-三列都不能重名：同一个 scope 内注册同名变量或同名工具都会冲突。
+四列都不能重名：同一个 scope 内注册同名变量或同名工具都会冲突。
 `verify-memory-isolation.mjs` 会实测「读：改 A 不影响 B/C、删 C 不影响 A/B」和
-「写：三个工具各写一笔，只有自己的文件变」。
-`verify-patch.mjs` 则静态检查 patch 里这三组名字两两互不相同。
-`toolName` 省略时默认是 `<variableName>_add`。
+「写：两套工具各写一笔，只有自己的文件变」。
+`verify-patch.mjs` 则静态检查 patch 里这几组名字两两互不相同。
+`toolName` 省略时默认是 `<variableName>_add`，`fixedToolName` 省略时默认是 `<variableName>_fixed`。
 
 ### 记忆文件
 
@@ -173,9 +177,10 @@ C:\Users\<你>\.dsh\archive\<预设名>\YYYY-MM-DD.md   ← 归档
    由本包 `src/memory.js` 实现，同时开两条通道：
    - **读**：`ctx.systemPrompt.variable()` 注册一个返回**字符串**的 provider，每次组装系统提示时实时读盘
      —— 改完文件下一个模型步就生效，不用重载宿主。用变量而不是 section 的原因见上文「为什么用提示变量」。
-   - **写**：`ctx.tools.register()` 注册一个 `<名称>_add` 工具（参数只有 `summary`），
-     由模型自己决定这一次记什么；工具负责编号、计数、超限归档并回写返回值。所以 `inject` 里除
-     `systemPrompt` 还必须有 `tools`。
+   - **写**：`ctx.tools.register()` 注册**两个**工具 —— `<名称>_add`（参数只有 `summary`，写滚动摘要）
+      与 `<名称>_fixed`（参数 `section` / `content` / `mode`，写固定记忆的某个小节）。
+      由模型自己决定这一次记什么；工具负责编号、计数、超限归档、小节定位并回写返回值。
+      所以 `inject` 里除 `systemPrompt` 还必须有 `tools`。
 
 ## 预设内容
 
@@ -221,7 +226,7 @@ dsh-whale-loli/
 ├── src/
 │   ├── index.js                # 插件入口，导出预设元信息 + 人设正文
 │   ├── presets.js              # 预设清单（唯一事实来源：index.js 与校验脚本都读它）
-│   ├── memory.js               # whale-memory：（读）记忆变量 +（写）记忆工具，四区格式 + 80 条滚动 + 归档
+│   ├── memory.js               # whale-memory：（读）记忆变量 +（写）滚动摘要 / 固定记忆两个工具，四区格式 + 80 条滚动 + 归档
 │   ├── history-window.js       # whale-history-window：真的裁到最近 N 轮（当前不挂载，留档）
 │   ├── persona.md              # 原版人设（唯一源）
 │   ├── persona-v2-live.md      # 活人版人设（唯一源）
@@ -243,6 +248,7 @@ dsh-whale-loli/
 ├── verify-history-window.mjs   # 实测真的只留最近 N 轮、不切断工具配对
 ├── verify-memory-injection.mjs # 证明变量通道有效、section 通道被丢弃
 ├── verify-memory-tool.mjs      # 实测写入工具：编号、计数、落盘、详细区同步
+├── verify-memory-fixed.mjs     # 实测固定记忆工具：8 小节、默认 append、显式 replace、不吞相邻区
 ├── verify-memory-isolation.mjs # 实测三个记忆文件不串（读 + 写）
 ├── verify-memory-rolling.mjs   # 实测四区结构与 80 条滚动 + 归档
 ├── verify-memory-archive.mjs   # 超 80 条时真的归档并瘦身（idle 触发，四预设互不覆盖）
@@ -270,6 +276,7 @@ node verify-runs.mjs                       # 插件真能加载 + 变量真能�
 node verify-history-window.mjs             # 真的裁到最近 N 轮（不切断工具配对）
 node verify-memory-injection.mjs           # 变量通道有效 / section 通道被丢弃
 node verify-memory-tool.mjs                # 写入工具：编号、计数、落盘、详细区同步
+node verify-memory-fixed.mjs               # 固定记忆工具：8 小节、默认 append、显式 replace 才覆盖
 node verify-memory-isolation.mjs           # 记忆文件端到端隔离（读 + 写，三个预设）
 node verify-memory-rolling.mjs             # 固定记忆永久 + 滚动摘要 80 条 + 归档
 node verify-memory-archive.mjs             # 超 80 条自动归档瘦身（idle 触发、四预设隔离）
